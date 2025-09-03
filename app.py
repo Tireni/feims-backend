@@ -70,10 +70,10 @@ def allowed_file(filename: str) -> bool:
 
 # Database configuration - use environment variables
 db_config = {
-    'host': os.environ.get('MYSQLHOST', 'localhost'),
-    'user': os.environ.get('MYSQLUSER', 'root'),
-    'password': os.environ.get('MYSQLPASSWORD', ''),
-    'database': os.environ.get('MYSQLDATABASE', 'feimsdb'),
+    'host': os.environ.get('MYSQLHOST', '95.85.5.9'),
+    'user': os.environ.get('MYSQLUSER', 'ffsnfdrcnet_enoch'),
+    'password': os.environ.get('MYSQLPASSWORD', 'Enoch@0330'),
+    'database': os.environ.get('MYSQLDATABASE', 'ffsnfdrcnet_feimsdb'),
     'port': int(os.environ.get('MYSQLPORT', 3306)),
     'connect_timeout': 30,
     'autocommit': True
