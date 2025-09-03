@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import mysql.connector
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
 import os
@@ -27,8 +27,7 @@ except ImportError:
 # human‑readable uptime string. Uptime is reported as the fraction of time
 # since startup relative to a 30‑day window, matching the specification that
 # calls for an uptime like "99.9%" over the last 30 days. If the app has been
-# running for less than 30 days the uptime percentage is extrapolated.
-app_start_time = datetime.utcnow()
+app_start_time = datetime.now(timezone.utc)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -125,18 +124,26 @@ def allowed_file(filename: str) -> bool:
 
 # Database configuration
 db_config = {
-    'host': '95.85.5.9',
-    'user': 'ffsnfdrcnet_enoch',
-    'password': 'Enoch@0330',
-    'database': 'ffsnfdrcnet_feimsdb'
+    'host': os.environ.get('MYSQLHOST', '95.85.5.9'),
+    'user': os.environ.get('MYSQLUSER', 'ffsnfdrcnet_enoch'),
+    'password': os.environ.get('MYSQLPASSWORD', 'Enoch@0330'),
+    'database': os.environ.get('MYSQLDATABASE', 'ffsnfdrcnet_feimsdb'),
+    'port': int(os.environ.get('MYSQLPORT', 3306))
 }
-
 def get_db_connection():
-    return mysql.connector.connect(**db_config)
-
+    try:
+        return mysql.connector.connect(**db_config)
+    except mysql.connector.Error as e:
+        print(f"Database connection error: {e}")
+        # Return None instead of crashing
+        return None
 # Create necessary tables if they don't exist
 def init_db():
     conn = get_db_connection()
+    if conn is None:
+        print("Failed to connect to database. Skipping table creation.")
+        return
+    
     cursor = conn.cursor()
     
     # Create vendors table (existing)
