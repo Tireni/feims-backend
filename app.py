@@ -2904,5 +2904,13 @@ def admin_extinguisher_summary(current_admin):
         return jsonify({'success': False, 'message': f'Error computing summary: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    init_db()
-    app.run(debug=True, port=5001)
+    try:
+        init_db()
+        # Get port from Railway environment variable or default to 5001
+        port = int(os.environ.get("PORT", 5001))
+        print(f"Starting FEIMS Backend on port {port}")
+        # Run on 0.0.0.0 to accept connections from any IP
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except Exception as e:
+        print(f"Application failed to start: {str(e)}")
+        # You might want to add more specific error handling here
