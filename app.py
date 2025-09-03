@@ -125,10 +125,10 @@ def allowed_file(filename: str) -> bool:
 
 # Database configuration
 db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '',
-    'database': 'feims_db'
+    'host': '95.85.5.9',
+    'user': 'ffsnfdrcnet_enoch',
+    'password': 'Enoch@0330',
+    'database': 'ffsnfdrcnet_feimsdb'
 }
 
 def get_db_connection():
