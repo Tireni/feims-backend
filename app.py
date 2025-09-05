@@ -11,6 +11,7 @@ import io
 import base64
 import json
 import logging
+from functools import wraps
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
