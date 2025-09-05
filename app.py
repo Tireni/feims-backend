@@ -29,6 +29,9 @@ CORS(app)  # Enable CORS for all routes
 # Secret key for JWT
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'feims-secret-key-2025'
 
+# Base URL for QR codes
+QR_CODE_BASE_URL = os.environ.get('QR_CODE_BASE_URL', 'https://nfdrc.ng/feims/scan.php')
+
 # -----------------------------------------------------------------------------
 # Admin configuration
 ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
@@ -268,7 +271,7 @@ def init_db():
                 id VARCHAR(255) PRIMARY KEY,
                 vendor_id VARCHAR(255) NOT NULL,
                 qr_code_id VARCHAR(255) NOT NULL,
-                service_type ENUM('refill', 'inspection', 'maintenance', 'repair', 'installation') NOT NULL,
+                service_type ENUM('refull', 'inspection', 'maintenance', 'repair', 'installation') NOT NULL,
                 description TEXT,
                 amount DECIMAL(10, 2),
                 customer_name VARCHAR(255),
@@ -697,7 +700,7 @@ def get_vendor_profile(current_user):
             'message': f'Error: {str(e)}'
         }), 500
 
-@app.route('/api/vendors', methods=['GET'])
+@app.route('/api/vendors', methods['GET'])
 @token_required
 def get_vendors(current_user):
     try:
@@ -862,10 +865,10 @@ def admin_get_qr_requests(current_admin):
         
     except Exception as e:
         logger.error(f"Error in admin_get_qr_requests: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error fetching QR code requests: {str(e)}'
-        }), 500
+    return jsonify({
+        'success': False,
+        'message': f'Error fetching QR code requests: {str(e)}'
+    }), 500
 
 @app.route('/api/admin/qr-requests/<request_id>/approve', methods=['POST'])
 @admin_token_required
@@ -903,14 +906,8 @@ def admin_approve_qr_request(current_admin, request_id):
             for i in range(quantity):
                 qr_id = str(uuid.uuid4())
                 
-                qr_data = {
-                    'id': qr_id,
-                    'vendor_id': request_data['vendor_id'],
-                    'product_type': request_data['product_type'],
-                    'size': request_data['size'],
-                    'type': request_data['type'],
-                    'generated_at': datetime.now().isoformat()
-                }
+                # Create the URL that will be encoded in the QR code
+                qr_url = f"{QR_CODE_BASE_URL}/{qr_id}"
                 
                 qr = qrcode.QRCode(
                     version=1,
@@ -918,7 +915,7 @@ def admin_approve_qr_request(current_admin, request_id):
                     box_size=10,
                     border=4,
                 )
-                qr.add_data(json.dumps(qr_data))
+                qr.add_data(qr_url)
                 qr.make(fit=True)
                 
                 img = qr.make_image(fill_color="#ff7b00", back_color="white")
@@ -986,9 +983,8 @@ def admin_approve_qr_request(current_admin, request_id):
                 
                 generated_codes.append({
                     'id': qr_id,
-                    'product_type': request_data['product_type'],
-                    'size': request_data['size'],
-                    'type': request_data['type']
+                    'qr_image': img_str,
+                    'url': qr_url
                 })
             
             # Update request status to approved
@@ -1002,8 +998,8 @@ def admin_approve_qr_request(current_admin, request_id):
             
             return jsonify({
                 'success': True,
-                'message': f'QR code request approved. Generated {quantity} QR codes.',
-                'generatedCodes': generated_codes
+                'message': f'Successfully generated {quantity} QR codes',
+                'codes': generated_codes
             }), 200
             
         except Exception as e:
@@ -1029,6 +1025,9 @@ def admin_approve_qr_request(current_admin, request_id):
 def admin_reject_qr_request(current_admin, request_id):
     """Reject a QR code request"""
     try:
+        data = request.get_json()
+        reason = data.get('reason', 'No reason provided')
+        
         conn = get_db_connection()
         if conn is None:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
@@ -1078,7 +1077,7 @@ def admin_reject_qr_request(current_admin, request_id):
 def get_vendor_qr_codes(current_user):
     """Get all QR codes for a vendor"""
     try:
-        status = request.args.get('status', None)
+        status = request.args.get('status', 'all')
         
         conn = get_db_connection()
         if conn is None:
@@ -1088,16 +1087,16 @@ def get_vendor_qr_codes(current_user):
         
         try:
             query = '''
-                SELECT id, product_type, size, type, qr_image, status, created_at, activated_at
+                SELECT id, vendor_id, product_type, size, type, qr_image, status, created_at, activated_at
                 FROM qr_codes 
                 WHERE vendor_id = %s
             '''
             params = [current_user['id']]
             
-            if status:
+            if status != 'all':
                 query += ' AND status = %s'
                 params.append(status)
-            
+                
             query += ' ORDER BY created_at DESC'
             
             cursor.execute(query, params)
@@ -1109,7 +1108,7 @@ def get_vendor_qr_codes(current_user):
             }), 200
             
         except Exception as e:
-            logger.error(f"Error fetching QR codes: {e}")
+            logger.error(f"Error fetching vendor QR codes: {e}")
             return jsonify({
                 'success': False,
                 'message': f'Error fetching QR codes: {str(e)}'
@@ -1125,21 +1124,11 @@ def get_vendor_qr_codes(current_user):
             'message': f'Error fetching QR codes: {str(e)}'
         }), 500
 
-@app.route('/api/vendor/activate-qr', methods=['POST'])
+@app.route('/api/vendor/qr-codes/<qr_id>/activate', methods=['POST'])
 @token_required
-def activate_qr_code(current_user):
-    """Activate a QR code (make it active)"""
+def activate_qr_code(current_user, qr_id):
+    """Activate a QR code"""
     try:
-        data = request.get_json()
-        
-        if not data or 'qrId' not in data:
-            return jsonify({
-                'success': False,
-                'message': 'QR code ID is required'
-            }), 400
-        
-        qr_id = data['qrId']
-        
         conn = get_db_connection()
         if conn is None:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
@@ -1184,9 +1173,58 @@ def activate_qr_code(current_user):
             'message': f'Error activating QR code: {str(e)}'
         }), 500
 
-@app.route('/api/scan/<qr_id>', methods=['GET'])
-def verify_qr(qr_id):
-    """Verify QR code (public endpoint)"""
+@app.route('/api/vendor/qr-codes/<qr_id>/deactivate', methods=['POST'])
+@token_required
+def deactivate_qr_code(current_user, qr_id):
+    """Deactivate a QR code"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                UPDATE qr_codes 
+                SET status = 'inactive', activated_at = NULL 
+                WHERE id = %s AND vendor_id = %s AND status = 'active'
+            ''', (qr_id, current_user['id']))
+            
+            if cursor.rowcount == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'QR code not found, already deactivated, or you do not have permission'
+                }), 404
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'QR code deactivated successfully'
+            }), 200
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error deactivating QR code: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error deactivating QR code: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in deactivate_qr_code: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error deactivating QR code: {str(e)}'
+        }), 500
+
+@app.route('/api/qr-codes/<qr_id>/details', methods=['GET'])
+def get_qr_code_details(qr_id):
+    """Get details for a QR code (public endpoint)"""
     try:
         conn = get_db_connection()
         if conn is None:
@@ -1195,7 +1233,7 @@ def verify_qr(qr_id):
         cursor = conn.cursor(dictionary=True)
         
         try:
-            # Get QR code details
+            # Get QR code basic info
             cursor.execute('''
                 SELECT id, vendor_id, product_type, size, type, status, created_at, activated_at
                 FROM qr_codes 
@@ -1210,14 +1248,17 @@ def verify_qr(qr_id):
                     'message': 'QR code not found'
                 }), 404
             
-            if qr_code['status'] != 'active':
-                return jsonify({
-                    'success': False,
-                    'message': 'QR code is not active'
-                }), 400
+            # Get vendor info
+            cursor.execute('''
+                SELECT contact_name, email, phone, business_address, state, local_government, category
+                FROM vendors 
+                WHERE id = %s
+            ''', (qr_code['vendor_id'],))
+            
+            vendor = cursor.fetchone()
             
             # Get product details based on type
-            product_data = None
+            product_details = None
             
             if qr_code['product_type'] == 'existing_extinguisher':
                 cursor.execute('''
@@ -1226,7 +1267,7 @@ def verify_qr(qr_id):
                     FROM existing_extinguishers 
                     WHERE qr_code_id = %s
                 ''', (qr_id,))
-                product_data = cursor.fetchone()
+                product_details = cursor.fetchone()
                 
             elif qr_code['product_type'] == 'new_extinguisher':
                 cursor.execute('''
@@ -1236,7 +1277,7 @@ def verify_qr(qr_id):
                     FROM new_extinguishers 
                     WHERE qr_code_id = %s
                 ''', (qr_id,))
-                product_data = cursor.fetchone()
+                product_details = cursor.fetchone()
                 
             elif qr_code['product_type'] == 'dcp_sachet':
                 cursor.execute('''
@@ -1246,124 +1287,177 @@ def verify_qr(qr_id):
                     FROM dcp_sachets 
                     WHERE qr_code_id = %s
                 ''', (qr_id,))
-                product_data = cursor.fetchone()
+                product_details = cursor.fetchone()
             
-            # Get vendor details
-            cursor.execute('''
-                SELECT contact_name, email, phone, business_address, state, local_government, category
-                FROM vendors 
-                WHERE id = %s
-            ''', (qr_code['vendor_id'],))
-            
-            vendor = cursor.fetchone()
-            
-            response_data = {
+            return jsonify({
                 'success': True,
                 'qr_code': qr_code,
-                'product_data': product_data,
-                'vendor': vendor
-            }
-            
-            return jsonify(response_data), 200
+                'vendor': vendor,
+                'product_details': product_details
+            }), 200
             
         except Exception as e:
-            logger.error(f"Error verifying QR code: {e}")
+            logger.error(f"Error fetching QR code details: {e}")
             return jsonify({
                 'success': False,
-                'message': f'Error verifying QR code: {str(e)}'
+                'message': f'Error fetching QR code details: {str(e)}'
             }), 500
         finally:
             cursor.close()
             conn.close()
         
     except Exception as e:
-        logger.error(f"Error in verify_qr: {e}")
+        logger.error(f"Error in get_qr_code_details: {e}")
         return jsonify({
             'success': False,
-            'message': f'Error verifying QR code: {str(e)}'
+            'message': f'Error fetching QR code details: {str(e)}'
         }), 500
 
-@app.route('/api/officers', methods=['POST'])
-def officer_register():
-    """Register a new officer (public endpoint)"""
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    """Admin login endpoint"""
     try:
         data = request.get_json()
         
-        if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
-        
-        required_fields = ['name', 'phone', 'serviceNumber']
-        for field in required_fields:
-            if field not in data or not data[field]:
-                return jsonify({
-                    'success': False,
-                    'message': f'{field} is required'
-                }), 400
-        
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-            
-        cursor = conn.cursor()
-        
-        try:
-            officer_id = str(uuid.uuid4())
-            
-            cursor.execute('''
-                INSERT INTO officers (id, name, phone, service_number)
-                VALUES (%s, %s, %s, %s)
-            ''', (
-                officer_id,
-                data['name'],
-                data['phone'],
-                data['serviceNumber']
-            ))
-            
-            conn.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': 'Officer registered successfully',
-                'officerId': officer_id
-            }), 201
-            
-        except mysql.connector.Error as err:
-            conn.rollback()
-            if err.errno == 1062:  # Duplicate entry
-                return jsonify({
-                    'success': False,
-                    'message': 'Officer with this service number already exists'
-                }), 409
-            logger.error(f"Database error in officer registration: {err}")
+        if not data or not data.get('username') or not data.get('password'):
             return jsonify({
                 'success': False,
-                'message': f'Database error: {err}'
-            }), 500
-        finally:
-            cursor.close()
-            conn.close()
+                'message': 'Username and password are required'
+            }), 400
+        
+        if data['username'] != ADMIN_USERNAME or data['password'] != ADMIN_PASSWORD:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid admin credentials'
+            }), 401
+        
+        token = jwt.encode({
+            'username': data['username'],
+            'role': 'admin',
+            'exp': datetime.now(timezone.utc) + timedelta(hours=8)
+        }, app.config['SECRET_KEY'], algorithm="HS256")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Admin login successful',
+            'token': token
+        }), 200
         
     except Exception as e:
-        logger.error(f"Error in officer_register: {e}")
+        logger.error(f"Error in admin login: {e}")
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}'
         }), 500
 
-@app.route('/api/mobile/entry', methods=['POST'])
-def officer_capture():
-    """Capture data from mobile app (public endpoint)"""
+@app.route('/api/admin/vendors', methods=['GET'])
+@admin_token_required
+def admin_get_vendors(current_admin):
+    """Get all vendors for admin"""
     try:
-        data = request.get_json()
+        status = request.args.get('status', 'all')
         
-        if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
         
-        if 'productType' not in data or 'data' not in data:
+        try:
+            query = '''
+                SELECT id, contact_name, email, phone, business_address, state, local_government, 
+                       category, status, created_at, updated_at
+                FROM vendors
+            '''
+            params = []
+            
+            if status != 'all':
+                query += ' WHERE status = %s'
+                params.append(status)
+                
+            query += ' ORDER BY created_at DESC'
+            
+            cursor.execute(query, params)
+            vendors = cursor.fetchall()
+            
+            return jsonify({
+                'success': True,
+                'vendors': vendors
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching vendors: {e}")
             return jsonify({
                 'success': False,
-                'message': 'productType and data are required'
-            }), 400
+                'message': f'Error fetching vendors: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in admin_get_vendors: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching vendors: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/vendors/<vendor_id>/approve', methods=['POST'])
+@admin_token_required
+def admin_approve_vendor(current_admin, vendor_id):
+    """Approve a vendor registration"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                UPDATE vendors 
+                SET status = 'approved', updated_at = NOW() 
+                WHERE id = %s AND status = 'pending'
+            ''', (vendor_id,))
+            
+            if cursor.rowcount == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Vendor not found or already processed'
+                }), 404
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Vendor approved successfully'
+            }), 200
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error approving vendor: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error approving vendor: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in admin_approve_vendor: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error approving vendor: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/vendors/<vendor_id>/reject', methods=['POST'])
+@admin_token_required
+def admin_reject_vendor(current_admin, vendor_id):
+    """Reject a vendor registration"""
+    try:
+        data = request.get_json()
+        reason = data.get('reason', 'No reason provided')
         
         conn = get_db_connection()
         if conn is None:
@@ -1372,108 +1466,208 @@ def officer_capture():
         cursor = conn.cursor()
         
         try:
-            entry_id = str(uuid.uuid4())
-            
             cursor.execute('''
-                INSERT INTO mobile_entries (id, product_type, data)
-                VALUES (%s, %s, %s)
-            ''', (
-                entry_id,
-                data['productType'],
-                json.dumps(data['data'])
-            ))
+                UPDATE vendors 
+                SET status = 'rejected', updated_at = NOW() 
+                WHERE id = %s AND status = 'pending'
+            ''', (vendor_id,))
+            
+            if cursor.rowcount == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Vendor not found or already processed'
+                }), 404
             
             conn.commit()
             
             return jsonify({
                 'success': True,
-                'message': 'Data captured successfully',
-                'entryId': entry_id
-            }), 201
+                'message': 'Vendor rejected successfully'
+            }), 200
             
         except Exception as e:
             conn.rollback()
-            logger.error(f"Error capturing mobile data: {e}")
+            logger.error(f"Error rejecting vendor: {e}")
             return jsonify({
                 'success': False,
-                'message': f'Error capturing data: {str(e)}'
+                'message': f'Error rejecting vendor: {str(e)}'
             }), 500
         finally:
             cursor.close()
             conn.close()
         
     except Exception as e:
-        logger.error(f"Error in officer_capture: {e}")
+        logger.error(f"Error in admin_reject_vendor: {e}")
         return jsonify({
             'success': False,
-            'message': f'Error capturing data: {str(e)}'
+            'message': f'Error rejecting vendor: {str(e)}'
         }), 500
 
-@app.route('/api/vendor/entries', methods=['POST'])
-@token_required
-def vendor_capture(current_user):
-    """Capture data from vendor (requires authentication)"""
+@app.route('/api/admin/dashboard', methods=['GET'])
+@admin_token_required
+def admin_dashboard(current_admin):
+    """Admin dashboard statistics"""
     try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
-        
-        if 'productType' not in data or 'data' not in data:
-            return jsonify({
-                'success': False,
-                'message': 'productType and data are required'
-            }), 400
-        
         conn = get_db_connection()
         if conn is None:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
             
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         
         try:
-            entry_id = str(uuid.uuid4())
-            
+            # Get vendor counts by status
             cursor.execute('''
-                INSERT INTO vendor_entries (id, vendor_id, product_type, data)
-                VALUES (%s, %s, %s, %s)
-            ''', (
-                entry_id,
-                current_user['id'],
-                data['productType'],
-                json.dumps(data['data'])
-            ))
+                SELECT status, COUNT(*) as count 
+                FROM vendors 
+                GROUP BY status
+            ''')
+            vendor_stats = cursor.fetchall()
             
-            conn.commit()
+            # Get QR code counts by status
+            cursor.execute('''
+                SELECT status, COUNT(*) as count 
+                FROM qr_codes 
+                GROUP BY status
+            ''')
+            qr_stats = cursor.fetchall()
+            
+            # Get QR code requests by status
+            cursor.execute('''
+                SELECT status, COUNT(*) as count 
+                FROM qr_code_requests 
+                GROUP BY status
+            ''')
+            request_stats = cursor.fetchall()
+            
+            # Get recent QR code requests
+            cursor.execute('''
+                SELECT qr.id, qr.product_type, qr.size, qr.type, qr.quantity, qr.status, 
+                       qr.created_at, v.contact_name as vendor_name
+                FROM qr_code_requests qr
+                JOIN vendors v ON qr.vendor_id = v.id
+                ORDER BY qr.created_at DESC 
+                LIMIT 10
+            ''')
+            recent_requests = cursor.fetchall()
+            
+            # Get recent vendor registrations
+            cursor.execute('''
+                SELECT id, contact_name, email, category, status, created_at
+                FROM vendors
+                ORDER BY created_at DESC 
+                LIMIT 10
+            ''')
+            recent_vendors = cursor.fetchall()
             
             return jsonify({
                 'success': True,
-                'message': 'Data captured successfully',
-                'entryId': entry_id
-            }), 201
+                'stats': {
+                    'vendors': vendor_stats,
+                    'qr_codes': qr_stats,
+                    'qr_requests': request_stats
+                },
+                'recent_requests': recent_requests,
+                'recent_vendors': recent_vendors
+            }), 200
             
         except Exception as e:
-            conn.rollback()
-            logger.error(f"Error capturing vendor data: {e}")
+            logger.error(f"Error fetching admin dashboard data: {e}")
             return jsonify({
                 'success': False,
-                'message': f'Error capturing data: {str(e)}'
+                'message': f'Error fetching dashboard data: {str(e)}'
             }), 500
         finally:
             cursor.close()
             conn.close()
         
     except Exception as e:
-        logger.error(f"Error in vendor_capture: {e}")
+        logger.error(f"Error in admin_dashboard: {e}")
         return jsonify({
             'success': False,
-            'message': f'Error capturing data: {str(e)}'
+            'message': f'Error fetching dashboard data: {str(e)}'
         }), 500
 
-@app.route('/api/vendor/sales', methods=['POST'])
+@app.route('/api/vendor/dashboard', methods=['GET'])
 @token_required
-def vendor_sales(current_user):
-    """Record a sale (requires authentication)"""
+def vendor_dashboard(current_user):
+    """Vendor dashboard statistics"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            # Get QR code counts by status for this vendor
+            cursor.execute('''
+                SELECT status, COUNT(*) as count 
+                FROM qr_codes 
+                WHERE vendor_id = %s
+                GROUP BY status
+            ''', (current_user['id'],))
+            qr_stats = cursor.fetchall()
+            
+            # Get QR code requests by status for this vendor
+            cursor.execute('''
+                SELECT status, COUNT(*) as count 
+                FROM qr_code_requests 
+                WHERE vendor_id = %s
+                GROUP BY status
+            ''', (current_user['id'],))
+            request_stats = cursor.fetchall()
+            
+            # Get recent QR code requests for this vendor
+            cursor.execute('''
+                SELECT id, product_type, size, type, quantity, status, created_at
+                FROM qr_code_requests 
+                WHERE vendor_id = %s
+                ORDER BY created_at DESC 
+                LIMIT 10
+            ''', (current_user['id'],))
+            recent_requests = cursor.fetchall()
+            
+            # Get recent QR codes for this vendor
+            cursor.execute('''
+                SELECT id, product_type, size, type, status, created_at, activated_at
+                FROM qr_codes 
+                WHERE vendor_id = %s
+                ORDER BY created_at DESC 
+                LIMIT 10
+            ''', (current_user['id'],))
+            recent_qr_codes = cursor.fetchall()
+            
+            return jsonify({
+                'success': True,
+                'stats': {
+                    'qr_codes': qr_stats,
+                    'qr_requests': request_stats
+                },
+                'recent_requests': recent_requests,
+                'recent_qr_codes': recent_qr_codes
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching vendor dashboard data: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching dashboard data: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in vendor_dashboard: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching dashboard data: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/record-sale', methods=['POST'])
+@token_required
+def record_sale(current_user):
+    """Record a sale transaction"""
     try:
         data = request.get_json()
         
@@ -1488,6 +1682,8 @@ def vendor_sales(current_user):
                     'message': f'{field} is required'
                 }), 400
         
+        sale_id = str(uuid.uuid4())
+        
         conn = get_db_connection()
         if conn is None:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
@@ -1495,8 +1691,6 @@ def vendor_sales(current_user):
         cursor = conn.cursor()
         
         try:
-            sale_id = str(uuid.uuid4())
-            
             cursor.execute('''
                 INSERT INTO sales 
                 (id, vendor_id, product_type, quantity, amount, customer_name, 
@@ -1535,15 +1729,759 @@ def vendor_sales(current_user):
             conn.close()
         
     except Exception as e:
-        logger.error(f"Error in vendor_sales: {e}")
+        logger.error(f"Error in record_sale: {e}")
         return jsonify({
             'success': False,
             'message': f'Error recording sale: {str(e)}'
         }), 500
 
-@app.route('/api/mobile/register', methods=['POST'])
-def training_book():
-    """Book a training session (public endpoint)"""
+@app.route('/api/vendor/record-service', methods=['POST'])
+@token_required
+def record_service(current_user):
+    """Record a service transaction"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['qrCodeId', 'serviceType']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        service_id = str(uuid.uuid4())
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO services 
+                (id, vendor_id, qr_code_id, service_type, description, amount, 
+                 customer_name, customer_phone, customer_email, customer_address)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                service_id,
+                current_user['id'],
+                data['qrCodeId'],
+                data['serviceType'],
+                data.get('description'),
+                data.get('amount', 0),
+                data.get('customerName'),
+                data.get('customerPhone'),
+                data.get('customerEmail'),
+                data.get('customerAddress')
+            ))
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Service recorded successfully',
+                'serviceId': service_id
+            }), 201
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error recording service: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error recording service: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in record_service: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error recording service: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/record-decommission', methods=['POST'])
+@token_required
+def record_decommission(current_user):
+    """Record a decommission transaction"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['qrCodeId', 'reason', 'disposalMethod', 'disposalDate']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        decommission_id = str(uuid.uuid4())
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO decommissions 
+                (id, vendor_id, qr_code_id, reason, disposal_method, disposal_date, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                decommission_id,
+                current_user['id'],
+                data['qrCodeId'],
+                data['reason'],
+                data['disposalMethod'],
+                data['disposalDate'],
+                data.get('notes')
+            ))
+            
+            # Deactivate the QR code
+            cursor.execute('''
+                UPDATE qr_codes 
+                SET status = 'inactive', activated_at = NULL 
+                WHERE id = %s AND vendor_id = %s
+            ''', (data['qrCodeId'], current_user['id']))
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Decommission recorded successfully',
+                'decommissionId': decommission_id
+            }), 201
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error recording decommission: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error recording decommission: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in record_decommission: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error recording decommission: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/sales', methods=['GET'])
+@token_required
+def get_vendor_sales(current_user):
+    """Get sales records for a vendor"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            cursor.execute('''
+                SELECT id, product_type, quantity, amount, customer_name, customer_phone, 
+                       payment_method, created_at
+                FROM sales 
+                WHERE vendor_id = %s
+                ORDER BY created_at DESC
+            ''', (current_user['id'],))
+            
+            sales = cursor.fetchall()
+            
+            return jsonify({
+                'success': True,
+                'sales': sales
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching sales: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching sales: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in get_vendor_sales: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching sales: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/services', methods=['GET'])
+@token_required
+def get_vendor_services(current_user):
+    """Get service records for a vendor"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            cursor.execute('''
+                SELECT s.id, s.qr_code_id, s.service_type, s.description, s.amount, 
+                       s.customer_name, s.customer_phone, s.created_at,
+                       qr.product_type, qr.size, qr.type
+                FROM services s
+                JOIN qr_codes qr ON s.qr_code_id = qr.id
+                WHERE s.vendor_id = %s
+                ORDER BY s.created_at DESC
+            ''', (current_user['id'],))
+            
+            services = cursor.fetchall()
+            
+            return jsonify({
+                'success': True,
+                'services': services
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching services: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching services: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in get_vendor_services: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching services: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/decommissions', methods=['GET'])
+@token_required
+def get_vendor_decommissions(current_user):
+    """Get decommission records for a vendor"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            cursor.execute('''
+                SELECT d.id, d.qr_code_id, d.reason, d.disposal_method, d.disposal_date, 
+                       d.notes, d.created_at,
+                       qr.product_type, qr.size, qr.type
+                FROM decommissions d
+                JOIN qr_codes qr ON d.qr_code_id = qr.id
+                WHERE d.vendor_id = %s
+                ORDER BY d.created_at DESC
+            ''', (current_user['id'],))
+            
+            decommissions = cursor.fetchall()
+            
+            return jsonify({
+                'success': True,
+                'decommissions': decommissions
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching decommissions: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching decommissions: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in get_vendor_decommissions: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching decommissions: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/upload-decommission-evidence', methods=['POST'])
+@token_required
+def upload_decommission_evidence(current_user):
+    """Upload evidence for decommission"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'message': 'No file provided'}), 400
+        
+        file = request.files['file']
+        decommission_id = request.form.get('decommissionId')
+        
+        if not decommission_id:
+            return jsonify({'success': False, 'message': 'Decommission ID is required'}), 400
+        
+        if file.filename == '':
+            return jsonify({'success': False, 'message': 'No file selected'}), 400
+        
+        if file and allowed_file(file.filename):
+            filename = secure_filename(f"{decommission_id}_{file.filename}")
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+            try:
+                file.save(filepath)
+                
+                conn = get_db_connection()
+                if conn is None:
+                    return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+                    
+                cursor = conn.cursor()
+                
+                try:
+                    cursor.execute('''
+                        UPDATE decommissions 
+                        SET evidence_path = %s 
+                        WHERE id = %s AND vendor_id = %s
+                    ''', (filepath, decommission_id, current_user['id']))
+                    
+                    conn.commit()
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': 'Evidence uploaded successfully',
+                        'filepath': filepath
+                    }), 200
+                    
+                except Exception as e:
+                    conn.rollback()
+                    logger.error(f"Error updating decommission evidence: {e}")
+                    return jsonify({
+                        'success': False,
+                        'message': f'Error updating decommission: {str(e)}'
+                    }), 500
+                finally:
+                    cursor.close()
+                    conn.close()
+                
+            except Exception as e:
+                logger.error(f"Error saving file: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': f'Error saving file: {str(e)}'
+                }), 500
+        
+        return jsonify({
+            'success': False,
+            'message': 'File type not allowed. Allowed types: png, jpg, jpeg, gif'
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Error in upload_decommission_evidence: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error uploading evidence: {str(e)}'
+        }), 500
+
+@app.route('/api/training-materials', methods=['GET'])
+@token_required
+def get_training_materials(current_user):
+    """Get training materials"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            cursor.execute('''
+                SELECT id, title, description, url, created_at
+                FROM training_materials
+                ORDER BY created_at DESC
+            ''')
+            
+            materials = cursor.fetchall()
+            
+            return jsonify({
+                'success': True,
+                'materials': materials
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching training materials: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching training materials: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in get_training_materials: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching training materials: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/request-certification', methods=['POST'])
+@token_required
+def request_certification(current_user):
+    """Request staff certification"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['staffName', 'staffEmail', 'staffPhone']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        certification_id = str(uuid.uuid4())
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO certifications 
+                (id, vendor_id, staff_name, staff_email, staff_phone, status)
+                VALUES (%s, %s, %s, %s, %s, 'pending')
+            ''', (
+                certification_id,
+                current_user['id'],
+                data['staffName'],
+                data['staffEmail'],
+                data['staffPhone']
+            ))
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Certification request submitted successfully. Awaiting approval.',
+                'certificationId': certification_id
+            }), 201
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error submitting certification request: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error submitting certification request: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in request_certification: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error submitting certification request: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/certifications', methods=['GET'])
+@token_required
+def get_vendor_certifications(current_user):
+    """Get certification requests for a vendor"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            cursor.execute('''
+                SELECT id, staff_name, staff_email, staff_phone, status, created_at
+                FROM certifications 
+                WHERE vendor_id = %s
+                ORDER BY created_at DESC
+            ''', (current_user['id'],))
+            
+            certifications = cursor.fetchall()
+            
+            return jsonify({
+                'success': True,
+                'certifications': certifications
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching certifications: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching certifications: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in get_vendor_certifications: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching certifications: {str(e)}'
+        }), 500
+
+@app.route('/api/vendor/report-issue', methods=['POST'])
+@token_required
+def report_issue(current_user):
+    """Report an issue or suspicious activity"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['subject', 'description', 'category']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        report_id = str(uuid.uuid4())
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO reports 
+                (id, vendor_id, subject, description, category)
+                VALUES (%s, %s, %s, %s, %s)
+            ''', (
+                report_id,
+                current_user['id'],
+                data['subject'],
+                data['description'],
+                data['category']
+            ))
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Issue reported successfully. We will investigate and get back to you.',
+                'reportId': report_id
+            }), 201
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error reporting issue: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error reporting issue: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in report_issue: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error reporting issue: {str(e)}'
+        }), 500
+
+@app.route('/api/mobile/scan', methods=['GET'])
+def mobile_scan_qr():
+    """Mobile endpoint to scan QR code and get details"""
+    try:
+        qr_id = request.args.get('id')
+        
+        if not qr_id:
+            return jsonify({'success': False, 'message': 'QR code ID is required'}), 400
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            # Get QR code basic info
+            cursor.execute('''
+                SELECT id, vendor_id, product_type, size, type, status, created_at, activated_at
+                FROM qr_codes 
+                WHERE id = %s
+            ''', (qr_id,))
+            
+            qr_code = cursor.fetchone()
+            
+            if not qr_code:
+                return jsonify({
+                    'success': False,
+                    'message': 'QR code not found'
+                }), 404
+            
+            # Get vendor info
+            cursor.execute('''
+                SELECT contact_name, email, phone, business_address, state, local_government, category
+                FROM vendors 
+                WHERE id = %s
+            ''', (qr_code['vendor_id'],))
+            
+            vendor = cursor.fetchone()
+            
+            # Get product details based on type
+            product_details = None
+            
+            if qr_code['product_type'] == 'existing_extinguisher':
+                cursor.execute('''
+                    SELECT plate_number, building_address, manufacturing_date, expiry_date, 
+                           engraved_id, phone_number, manufacturer_name, state, local_government
+                    FROM existing_extinguishers 
+                    WHERE qr_code_id = %s
+                ''', (qr_id,))
+                product_details = cursor.fetchone()
+                
+            elif qr_code['product_type'] == 'new_extinguisher':
+                cursor.execute('''
+                    SELECT manufacturer_name, son_number, ncs_receipt_number, ffs_fat_id, 
+                           distributor_name, manufacturing_date, expiry_date, engraved_id, 
+                           phone_number, state, local_government
+                    FROM new_extinguishers 
+                    WHERE qr_code_id = %s
+                ''', (qr_id,))
+                product_details = cursor.fetchone()
+                
+            elif qr_code['product_type'] == 'dcp_sachet':
+                cursor.execute('''
+                    SELECT manufacturer_name, son_number, ncs_receipt_number, ffs_fat_id, 
+                           distributor_name, packaging_company, manufacturing_date, expiry_date, 
+                           batch_lot_id, phone_number, state, local_government
+                    FROM dcp_sachets 
+                    WHERE qr_code_id = %s
+                ''', (qr_id,))
+                product_details = cursor.fetchone()
+            
+            return jsonify({
+                'success': True,
+                'qr_code': qr_code,
+                'vendor': vendor,
+                'product_details': product_details
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching QR code details for mobile: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching QR code details: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in mobile_scan_qr: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching QR code details: {str(e)}'
+        }), 500
+
+@app.route('/api/mobile/register-extinguisher', methods=['POST'])
+def mobile_register_extinguisher():
+    """Mobile endpoint to register a fire extinguisher"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['productType', 'size', 'type']
+        if data['productType'] == 'existing_extinguisher':
+            required_fields.extend(['plateNumber', 'buildingAddress', 'manufacturingDate', 
+                                  'expiryDate', 'engravedId', 'phoneNumber', 
+                                  'manufacturerName', 'state', 'localGovernment'])
+        elif data['productType'] == 'new_extinguisher':
+            required_fields.extend(['manufacturerName', 'sonNumber', 'ncsReceiptNumber', 
+                                  'ffsFATId', 'distributorName', 'manufacturingDate', 
+                                  'expiryDate', 'engravedId', 'phoneNumber', 
+                                  'state', 'localGovernment'])
+        elif data['productType'] == 'dcp_sachet':
+            required_fields.extend(['manufacturerName', 'sonNumber', 'ncsReceiptNumber', 
+                                  'ffsFATId', 'distributorName', 'packagingCompany', 
+                                  'manufacturingDate', 'expiryDate', 'batchLotId', 
+                                  'phoneNumber', 'state', 'localGovernment'])
+        
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        entry_id = str(uuid.uuid4())
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO mobile_entries 
+                (id, product_type, data)
+                VALUES (%s, %s, %s)
+            ''', (
+                entry_id,
+                data['productType'],
+                json.dumps(data)
+            ))
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Fire extinguisher registration submitted successfully',
+                'entryId': entry_id
+            }), 201
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error registering extinguisher: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error registering extinguisher: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in mobile_register_extinguisher: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error registering extinguisher: {str(e)}'
+        }), 500
+
+@app.route('/api/mobile/book-training', methods=['POST'])
+def mobile_book_training():
+    """Mobile endpoint to book training"""
     try:
         data = request.get_json()
         
@@ -1558,6 +2496,8 @@ def training_book():
                     'message': f'{field} is required'
                 }), 400
         
+        booking_id = str(uuid.uuid4())
+        
         conn = get_db_connection()
         if conn is None:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
@@ -1565,8 +2505,6 @@ def training_book():
         cursor = conn.cursor()
         
         try:
-            booking_id = str(uuid.uuid4())
-            
             cursor.execute('''
                 INSERT INTO training_bookings 
                 (id, name, phone, plate_or_address, booking_date, booking_time)
@@ -1584,7 +2522,7 @@ def training_book():
             
             return jsonify({
                 'success': True,
-                'message': 'Training booked successfully',
+                'message': 'Training booked successfully. We will contact you to confirm.',
                 'bookingId': booking_id
             }), 201
             
@@ -1600,26 +2538,30 @@ def training_book():
             conn.close()
         
     except Exception as e:
-        logger.error(f"Error in training_book: {e}")
+        logger.error(f"Error in mobile_book_training: {e}")
         return jsonify({
             'success': False,
             'message': f'Error booking training: {str(e)}'
         }), 500
 
-@app.route('/api/mobile/entry', methods=['POST'])
-def capture_data():
-    """Capture data from mobile (public endpoint)"""
+@app.route('/api/mobile/make-payment', methods=['POST'])
+def mobile_make_payment():
+    """Mobile endpoint to make payments"""
     try:
         data = request.get_json()
         
         if not data:
             return jsonify({'success': False, 'message': 'No data provided'}), 400
         
-        if 'productType' not in data or 'data' not in data:
-            return jsonify({
-                'success': False,
-                'message': 'productType and data are required'
-            }), 400
+        required_fields = ['amount', 'purpose', 'paymentMethod']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        payment_id = str(uuid.uuid4())
         
         conn = get_db_connection()
         if conn is None:
@@ -1628,234 +2570,50 @@ def capture_data():
         cursor = conn.cursor()
         
         try:
-            entry_id = str(uuid.uuid4())
-            
             cursor.execute('''
-                INSERT INTO mobile_entries (id, product_type, data)
-                VALUES (%s, %s, %s)
+                INSERT INTO mobile_payments 
+                (id, amount, purpose, payment_method, nfec_share, aggregator_share, igr_share)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             ''', (
-                entry_id,
-                data['productType'],
-                json.dumps(data['data'])
+                payment_id,
+                data['amount'],
+                data['purpose'],
+                data['paymentMethod'],
+                data.get('nfecShare', 0),
+                data.get('aggregatorShare', 0),
+                data.get('igrShare', 0)
             ))
             
             conn.commit()
             
             return jsonify({
                 'success': True,
-                'message': 'Data captured successfully',
-                'entryId': entry_id
+                'message': 'Payment processed successfully',
+                'paymentId': payment_id,
+                'receiptNumber': f"NFEC-{payment_id[:8].upper()}"
             }), 201
             
         except Exception as e:
             conn.rollback()
-            logger.error(f"Error capturing mobile data: {e}")
+            logger.error(f"Error processing payment: {e}")
             return jsonify({
                 'success': False,
-                'message': f'Error capturing data: {str(e)}'
+                'message': f'Error processing payment: {str(e)}'
             }), 500
         finally:
             cursor.close()
             conn.close()
         
     except Exception as e:
-        logger.error(f"Error in capture_data: {e}")
+        logger.error(f"Error in mobile_make_payment: {e}")
         return jsonify({
             'success': False,
-            'message': f'Error capturing data: {str(e)}'
+            'message': f'Error processing payment: {str(e)}'
         }), 500
 
-@app.route('/api/admin/login', methods=['POST'])
-def admin_login():
-    """Admin login endpoint"""
-    try:
-        data = request.get_json()
-        
-        if not data or not data.get('username') or not data.get('password'):
-            return jsonify({
-                'success': False,
-                'message': 'Username and password are required'
-            }), 400
-        
-        if data['username'] != ADMIN_USERNAME or data['password'] != ADMIN_PASSWORD:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid username or password'
-            }), 401
-        
-        token = jwt.encode({
-            'username': data['username'],
-            'role': 'admin',
-            'exp': datetime.now(timezone.utc) + timedelta(hours=8)
-        }, app.config['SECRET_KEY'], algorithm="HS256")
-        
-        return jsonify({
-            'success': True,
-            'message': 'Login successful',
-            'token': token
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error in admin login: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
-@app.route('/api/admin/vendors', methods=['GET'])
-@admin_token_required
-def admin_get_vendors(current_admin):
-    """Get all vendors for admin"""
-    try:
-        status = request.args.get('status', None)
-        
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-            
-        cursor = conn.cursor(dictionary=True)
-        
-        try:
-            query = '''
-                SELECT id, contact_name, email, phone, business_address, state, 
-                       local_government, category, status, created_at
-                FROM vendors
-            '''
-            params = []
-            
-            if status:
-                query += ' WHERE status = %s'
-                params.append(status)
-            
-            query += ' ORDER BY created_at DESC'
-            
-            cursor.execute(query, params)
-            vendors = cursor.fetchall()
-            
-            return jsonify({
-                'success': True,
-                'vendors': vendors
-            }), 200
-            
-        except Exception as e:
-            logger.error(f"Error fetching vendors: {e}")
-            return jsonify({
-                'success': False,
-                'message': f'Error fetching vendors: {str(e)}'
-            }), 500
-        finally:
-            cursor.close()
-            conn.close()
-        
-    except Exception as e:
-        logger.error(f"Error in admin_get_vendors: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error fetching vendors: {str(e)}'
-        }), 500
-
-@app.route('/api/admin/vendors/<vendor_id>/approve', methods=['POST'])
-@admin_token_required
-def admin_approve_vendor(current_admin, vendor_id):
-    """Approve a vendor"""
-    try:
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-            
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                UPDATE vendors 
-                SET status = 'approved'
-                WHERE id = %s
-            ''', (vendor_id,))
-            
-            if cursor.rowcount == 0:
-                return jsonify({
-                    'success': False,
-                    'message': 'Vendor not found'
-                }), 404
-            
-            conn.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': 'Vendor approved successfully'
-            }), 200
-            
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Error approving vendor: {e}")
-            return jsonify({
-                'success': False,
-                'message': f'Error approving vendor: {str(e)}'
-            }), 500
-        finally:
-            cursor.close()
-            conn.close()
-        
-    except Exception as e:
-        logger.error(f"Error in admin_approve_vendor: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error approving vendor: {str(e)}'
-        }), 500
-
-@app.route('/api/admin/vendors/<vendor_id>/reject', methods=['POST'])
-@admin_token_required
-def admin_reject_vendor(current_admin, vendor_id):
-    """Reject a vendor"""
-    try:
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-            
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute('''
-                UPDATE vendors 
-                SET status = 'rejected'
-                WHERE id = %s
-            ''', (vendor_id,))
-            
-            if cursor.rowcount == 0:
-                return jsonify({
-                    'success': False,
-                    'message': 'Vendor not found'
-                }), 404
-            
-            conn.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': 'Vendor rejected successfully'
-            }), 200
-            
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Error rejecting vendor: {e}")
-            return jsonify({
-                'success': False,
-                'message': f'Error rejecting vendor: {str(e)}'
-            }), 500
-        finally:
-            cursor.close()
-            conn.close()
-        
-    except Exception as e:
-        logger.error(f"Error in admin_reject_vendor: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error rejecting vendor: {str(e)}'
-        }), 500
-
-@app.route('/api/admin/stats', methods=['GET'])
-@admin_token_required
-def admin_stats(current_admin):
-    """Get admin dashboard statistics"""
+@app.route('/api/mobile/training-materials', methods=['GET'])
+def mobile_get_training_materials():
+    """Mobile endpoint to get training materials"""
     try:
         conn = get_db_connection()
         if conn is None:
@@ -1864,74 +2622,34 @@ def admin_stats(current_admin):
         cursor = conn.cursor(dictionary=True)
         
         try:
-            # Get vendor counts by status
             cursor.execute('''
-                SELECT status, COUNT(*) as count 
-                FROM vendors 
-                GROUP BY status
+                SELECT id, title, description, url, created_at
+                FROM training_materials
+                ORDER BY created_at DESC
             ''')
-            vendor_counts = cursor.fetchall()
             
-            # Get QR code counts by status
-            cursor.execute('''
-                SELECT status, COUNT(*) as count 
-                FROM qr_codes 
-                GROUP BY status
-            ''')
-            qr_counts = cursor.fetchall()
-            
-            # Get QR code requests by status
-            cursor.execute('''
-                SELECT status, COUNT(*) as count 
-                FROM qr_code_requests 
-                GROUP BY status
-            ''')
-            request_counts = cursor.fetchall()
-            
-            # Get recent sales total
-            cursor.execute('''
-                SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total 
-                FROM sales 
-                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-            ''')
-            sales_data = cursor.fetchone()
-            
-            # Get recent training bookings
-            cursor.execute('''
-                SELECT COUNT(*) as count 
-                FROM training_bookings 
-                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-            ''')
-            training_data = cursor.fetchone()
-            
-            stats = {
-                'vendors': vendor_counts,
-                'qr_codes': qr_counts,
-                'qr_requests': request_counts,
-                'recent_sales': sales_data,
-                'recent_training': training_data
-            }
+            materials = cursor.fetchall()
             
             return jsonify({
                 'success': True,
-                'stats': stats
+                'materials': materials
             }), 200
             
         except Exception as e:
-            logger.error(f"Error fetching admin stats: {e}")
+            logger.error(f"Error fetching training materials for mobile: {e}")
             return jsonify({
                 'success': False,
-                'message': f'Error fetching stats: {str(e)}'
+                'message': f'Error fetching training materials: {str(e)}'
             }), 500
         finally:
             cursor.close()
             conn.close()
         
     except Exception as e:
-        logger.error(f"Error in admin_stats: {e}")
+        logger.error(f"Error in mobile_get_training_materials: {e}")
         return jsonify({
             'success': False,
-            'message': f'Error fetching stats: {str(e)}'
+            'message': f'Error fetching training materials: {str(e)}'
         }), 500
 
 @app.route('/api/health', methods=['GET'])
@@ -1946,17 +2664,26 @@ def health_check():
                 'message': 'Database connection failed',
                 'status': 'unhealthy'
             }), 500
-        
+            
+        cursor = conn.cursor()
+        cursor.execute('SELECT 1')
+        cursor.close()
         conn.close()
         
         uptime = datetime.now(timezone.utc) - app_start_time
+        uptime_seconds = uptime.total_seconds()
         
         return jsonify({
             'success': True,
             'message': 'Service is healthy',
             'status': 'healthy',
-            'uptime': str(uptime),
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'uptime': {
+                'days': int(uptime_seconds // 86400),
+                'hours': int((uptime_seconds % 86400) // 3600),
+                'minutes': int((uptime_seconds % 3600) // 60),
+                'seconds': int(uptime_seconds % 60)
+            }
         }), 200
         
     except Exception as e:
@@ -1967,6 +2694,15 @@ def health_check():
             'status': 'unhealthy'
         }), 500
 
+@app.route('/api/status', methods=['GET'])
+def status():
+    """Simple status endpoint"""
+    return jsonify({
+        'success': True,
+        'message': 'FEIMS API is running',
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }), 200
+
 # Error handlers
 @app.errorhandler(404)
 def not_found(error):
@@ -1975,21 +2711,15 @@ def not_found(error):
         'message': 'Endpoint not found'
     }), 404
 
-@app.errorhandler(405)
-def method_not_allowed(error):
-    return jsonify({
-        'success': False,
-        'message': 'Method not allowed'
-    }), 405
-
 @app.errorhandler(500)
-def internal_server_error(error):
+def internal_error(error):
     logger.error(f"Internal server error: {error}")
     return jsonify({
         'success': False,
         'message': 'Internal server error'
     }), 500
 
+# Initialize the application
 if __name__ == '__main__':
     # Initialize database
     init_db()
@@ -1999,3 +2729,6 @@ if __name__ == '__main__':
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     
     app.run(host='0.0.0.0', port=port, debug=debug)
+else:
+    # Initialize database when running as WSGI app
+    init_db()
