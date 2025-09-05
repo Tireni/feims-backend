@@ -700,7 +700,7 @@ def get_vendor_profile(current_user):
             'message': f'Error: {str(e)}'
         }), 500
 
-@app.route('/api/vendors', methods['GET'])
+@app.route('/api/vendors', methods=['GET'])
 @token_required
 def get_vendors(current_user):
     try:
@@ -735,7 +735,6 @@ def get_vendors(current_user):
             'success': False,
             'message': f'Error: {str(e)}'
         }), 500
-
 @app.route('/api/vendor/request-qr', methods=['POST'])
 @token_required
 def request_qr_code(current_user):
