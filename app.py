@@ -891,14 +891,39 @@ def get_vendor_qr_codes(current_user):
 @app.route('/api/vendor/activate-qr', methods=['POST'])
 @token_required
 def activate_qr_code(current_user):
+    """Immediate activation for vendor-provided QR ID."""
     try:
         data = request.get_json() or {}
         qr_id = data.get('qrId')
         if not qr_id:
             return jsonify({'success': False, 'message': 'QR code ID is required'}), 400
+
         conn = get_db_connection()
         if conn is None:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute('SELECT vendor_id, status FROM qr_codes WHERE id = %s', (qr_id,))
+        record = cursor.fetchone()
+        if not record:
+            cursor.close(); conn.close()
+            return jsonify({'success': False, 'message': 'QR code not found'}), 404
+
+        if record['vendor_id'] != current_user['id']:
+            cursor.close(); conn.close()
+            return jsonify({'success': False, 'message': 'Unauthorized: QR code not owned by this vendor'}), 403
+
+        if record['status'] == 'active':
+            cursor.close(); conn.close()
+            return jsonify({'success': False, 'message': 'QR code is already active'}), 400
+
+        # Immediate activation
+        cursor.execute('UPDATE qr_codes SET status = %s, activated_at = NOW() WHERE id = %s', ('active', qr_id))
+        conn.commit()
+        cursor.close(); conn.close()
+        return jsonify({'success': True, 'message': 'QR code activated successfully'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error activating QR code: {str(e)}'}), 500
         cursor = conn.cursor(dictionary=True)
         cursor.execute('SELECT vendor_id, status FROM qr_codes WHERE id = %s', (qr_id,))
         record = cursor.fetchone()
@@ -1006,6 +1031,32 @@ def vendor_sales(current_user):
                         'message': f'{field} is required'
                     }), 400
             
+            
+            # Enforce data-capture requirement for DCP sales
+            if data.get('productType') == 'dcp':
+                plate = data.get('plateNumber')
+                phone = data.get('customerPhone')
+                address = data.get('customerAddress')
+                conn_chk = get_db_connection()
+                if conn_chk is None:
+                    return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+                cur_chk = conn_chk.cursor(dictionary=True)
+                found = False
+                if plate:
+                    cur_chk.execute('SELECT id FROM existing_extinguishers WHERE plate_number = %s LIMIT 1', (plate,))
+                    if cur_chk.fetchone(): found = True
+                if not found and phone:
+                    cur_chk.execute('SELECT id FROM existing_extinguishers WHERE phone_number = %s LIMIT 1', (phone,))
+                    if cur_chk.fetchone(): found = True
+                if not found and address:
+                    cur_chk.execute('SELECT id FROM existing_extinguishers WHERE building_address = %s LIMIT 1', (address,))
+                    if cur_chk.fetchone(): found = True
+                cur_chk.close(); conn_chk.close()
+                if not found:
+                    return jsonify({
+                        'success': False,
+                        'message': 'DCP sale requires prior extinguisher data capture. Please complete capture (vehicle: plateNumber; building: phoneNumber/buildingAddress) and try again.'
+                    }), 400
             sale_id = str(uuid.uuid4())
             
             conn = get_db_connection()
@@ -2517,3 +2568,266 @@ if __name__ == '__main__':
     
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('DEBUG', 'False').lower() == 'true')
+
+# ===========================
+# OFFICER & CAPTURE ENDPOINTS
+# ===========================
+
+def ensure_column_nullable(conn, table, column):
+    try:
+        cur = conn.cursor()
+        # Best-effort to relax NOT NULL constraints
+        if column.lower() == 'phone_number':
+            cur.execute(f"ALTER TABLE {table} MODIFY {column} VARCHAR(20) NULL")
+        elif column.lower() in ('state', 'local_government'):
+            cur.execute(f"ALTER TABLE {table} MODIFY {column} VARCHAR(100) NULL")
+        else:
+            cur.execute(f"ALTER TABLE {table} MODIFY {column} VARCHAR(255) NULL")
+        conn.commit()
+        cur.close()
+    except Exception:
+        try:
+            cur = conn.cursor()
+            cur.execute(f"ALTER TABLE {table} MODIFY {column} VARCHAR(255) NULL")
+            conn.commit()
+            cur.close()
+        except Exception:
+            pass
+
+def _roleflow_post_init():
+    conn = get_db_connection()
+    if conn is None:
+        return
+    cur = conn.cursor()
+    try:
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS officers (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                phone VARCHAR(20) NOT NULL,
+                service_number VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        cur.close()
+
+    # Relax NOT NULL constraints that conflict with new flows
+    try:
+        ensure_column_nullable(conn, 'existing_extinguishers', 'phone_number')
+        ensure_column_nullable(conn, 'existing_extinguishers', 'state')
+        ensure_column_nullable(conn, 'existing_extinguishers', 'local_government')
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+try:
+    _roleflow_post_init()
+except Exception:
+    pass
+
+def officer_token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization', '')
+        if token.startswith('Bearer '):
+            token = token[7:]
+        if not token:
+            return jsonify({'success': False, 'message': 'Officer token is missing'}), 401
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            if data.get('role') != 'officer':
+                return jsonify({'success': False, 'message': 'Officer privileges required'}), 403
+            current_officer = {'id': data.get('officer_id'), 'name': data.get('name')}
+        except Exception:
+            return jsonify({'success': False, 'message': 'Invalid or expired officer token'}), 401
+        return f(current_officer, *args, **kwargs)
+    return decorated
+
+@app.route('/api/officer/register', methods=['POST'])
+def officer_register():
+    """Register an officer and return a JWT."""
+    try:
+        data = request.get_json() or {}
+        for field in ['name', 'phone', 'serviceNumber']:
+            if not data.get(field):
+                return jsonify({'success': False, 'message': f'{field} is required'}), 400
+
+        officer_id = str(uuid.uuid4())
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO officers (id, name, phone, service_number)
+            VALUES (%s, %s, %s, %s)
+        ''', (officer_id, data['name'], data['phone'], data['serviceNumber']))
+        conn.commit()
+        cur.close(); conn.close()
+
+        token = jwt.encode({'role': 'officer', 'officer_id': officer_id, 'name': data['name']}, app.config['SECRET_KEY'], algorithm="HS256")
+        return jsonify({'success': True, 'message': 'Officer registered', 'token': token, 'officerId': officer_id}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error registering officer: {str(e)}'}), 500
+
+def _create_qr_if_needed(cursor, owner_vendor_id, size, qtype):
+    """Create a minimal QR for existing extinguisher if qrCodeId not supplied."""
+    qr_id = str(uuid.uuid4())
+    qr_payload = {
+        'id': qr_id,
+        'vendor_id': owner_vendor_id or 'officer_capture',
+        'product_type': 'existing_extinguisher',
+        'size': size,
+        'type': qtype,
+        'generated_at': datetime.now().isoformat()
+    }
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
+    qr.add_data(json.dumps(qr_payload))
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#ff7b00", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    img_str = base64.b64encode(buf.getvalue()).decode()
+
+    cursor.execute('''
+        INSERT INTO qr_codes (id, vendor_id, product_type, size, type, qr_image, status)
+        VALUES (%s, %s, %s, %s, %s, %s, 'inactive')
+    ''', (qr_id, owner_vendor_id or 'officer_capture', 'existing_extinguisher', size, qtype, img_str))
+    return qr_id
+
+@app.route('/api/officer/capture', methods=['POST'])
+@officer_token_required
+def officer_capture(current_officer):
+    """Officer data capture for existing extinguishers."""
+    try:
+        data = request.get_json() or {}
+        mode = data.get('mode')
+        if mode not in ('vehicle', 'building'):
+            return jsonify({'success': False, 'message': "mode must be 'vehicle' or 'building'"}), 400
+
+        base_required = ['productType', 'size', 'type', 'manufacturingDate', 'expiryDate', 'engravedId', 'manufacturerName']
+        for f in base_required:
+            if not data.get(f):
+                return jsonify({'success': False, 'message': f'{f} is required'}), 400
+
+        if data['productType'] != 'existing_extinguisher':
+            return jsonify({'success': False, 'message': "productType must be 'existing_extinguisher'"}), 400
+
+        if mode == 'vehicle':
+            if not data.get('plateNumber'):
+                return jsonify({'success': False, 'message': 'plateNumber is required for vehicle capture'}), 400
+        else:
+            if not data.get('phoneNumber') or not data.get('buildingAddress'):
+                return jsonify({'success': False, 'message': 'phoneNumber and buildingAddress are required for building capture'}), 400
+
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        cur = conn.cursor()
+
+        qr_id = data.get('qrCodeId')
+        if not qr_id:
+            qr_id = _create_qr_if_needed(cur, None, data['size'], data['type'])
+
+        eid = str(uuid.uuid4())
+        cur.execute('''
+            INSERT INTO existing_extinguishers
+                (id, qr_code_id, plate_number, building_address, manufacturing_date, expiry_date, engraved_id,
+                 phone_number, manufacturer_name, state, local_government)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            eid, qr_id,
+            data.get('plateNumber') if mode == 'vehicle' else None,
+            data.get('buildingAddress') if mode == 'building' else None,
+            data['manufacturingDate'], data['expiryDate'], data['engravedId'],
+            data.get('phoneNumber') if mode == 'building' else None,
+            data['manufacturerName'],
+            data.get('state'), data.get('localGovernment')
+        ))
+        conn.commit()
+        cur.close(); conn.close()
+        return jsonify({'success': True, 'message': 'Capture recorded', 'qrCodeId': qr_id, 'entryId': eid}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error capturing data: {str(e)}'}), 500
+
+@app.route('/api/vendor/capture', methods=['POST'])
+@token_required
+def vendor_capture(current_user):
+    """Vendor data capture for existing extinguishers."""
+    try:
+        data = request.get_json() or {}
+        mode = data.get('mode')
+        if mode not in ('vehicle', 'building'):
+            return jsonify({'success': False, 'message': "mode must be 'vehicle' or 'building'"}), 400
+
+        base_required = ['productType', 'size', 'type', 'manufacturingDate', 'expiryDate', 'engravedId', 'manufacturerName']
+        for f in base_required:
+            if not data.get(f):
+                return jsonify({'success': False, 'message': f'{f} is required'}), 400
+
+        if data['productType'] != 'existing_extinguisher':
+            return jsonify({'success': False, 'message': "productType must be 'existing_extinguisher'"}), 400
+
+        if mode == 'vehicle':
+            if not data.get('plateNumber'):
+                return jsonify({'success': False, 'message': 'plateNumber is required for vehicle capture'}), 400
+        else:
+            if not data.get('phoneNumber') or not data.get('buildingAddress'):
+                return jsonify({'success': False, 'message': 'phoneNumber and buildingAddress are required for building capture'}), 400
+
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        cur = conn.cursor()
+
+        qr_id = data.get('qrCodeId')
+        if not qr_id:
+            qr_id = _create_qr_if_needed(cur, current_user['id'], data['size'], data['type'])
+
+        eid = str(uuid.uuid4())
+        cur.execute('''
+            INSERT INTO existing_extinguishers
+                (id, qr_code_id, plate_number, building_address, manufacturing_date, expiry_date, engraved_id,
+                 phone_number, manufacturer_name, state, local_government)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            eid, qr_id,
+            data.get('plateNumber') if mode == 'vehicle' else None,
+            data.get('buildingAddress') if mode == 'building' else None,
+            data['manufacturingDate'], data['expiryDate'], data['engravedId'],
+            data.get('phoneNumber') if mode == 'building' else None,
+            data['manufacturerName'],
+            data.get('state'), data.get('localGovernment')
+        ))
+        conn.commit()
+        cur.close(); conn.close()
+        return jsonify({'success': True, 'message': 'Capture recorded', 'qrCodeId': qr_id, 'entryId': eid}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error capturing data: {str(e)}'}), 500
+
+@app.route('/api/training/book', methods=['POST'])
+def training_book():
+    """Training booking endpoint."""
+    try:
+        data = request.get_json() or {}
+        for f in ['name', 'phone', 'plateOrAddress', 'bookingDate', 'bookingTime']:
+            if not data.get(f):
+                return jsonify({'success': False, 'message': f'{f} is required'}), 400
+        bid = str(uuid.uuid4())
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO training_bookings (id, name, phone, plate_or_address, booking_date, booking_time)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (bid, data['name'], data['phone'], data['plateOrAddress'], data['bookingDate'], data['bookingTime']))
+        conn.commit()
+        cur.close(); conn.close()
+        return jsonify({'success': True, 'message': 'Training booking submitted', 'bookingId': bid}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error booking training: {str(e)}'}), 500
