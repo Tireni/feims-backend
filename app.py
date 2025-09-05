@@ -269,7 +269,7 @@ def get_vendor_by_email(email):
     vendor = None
     
     try:
-        cursor.execute('SELECT id, contact_name, email, phone, password_hash, status FROM vendors WHERE email = %s', (email,))
+        cursor.execute('SELECT id, contact_name, email, phone, password_hash, status, category FROM vendors WHERE email = %s', (email,))
         vendor = cursor.fetchone()
     except Exception as e:
         logger.error(f"Error fetching vendor by email: {e}")
@@ -304,6 +304,7 @@ def register_vendor():
         
         vendor_id = str(uuid.uuid4())
         password_hash = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        vendor_status = 'approved' if data['category'] == 'manufacturer' else 'pending'
         
         conn = get_db_connection()
         if conn is None:
@@ -314,8 +315,8 @@ def register_vendor():
         try:
             cursor.execute('''
                 INSERT INTO vendors (id, contact_name, email, phone, 
-                business_address, state, local_government, category, password_hash)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                business_address, state, local_government, category, password_hash, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 vendor_id,
                 data['contactName'],
@@ -325,14 +326,14 @@ def register_vendor():
                 data['state'],
                 data['localGovernment'],
                 data['category'],
-                password_hash
+                password_hash,
+                vendor_status
             ))
-            
             conn.commit()
             
             return jsonify({
                 'success': True,
-                'message': 'Vendor registration submitted successfully. Awaiting approval.',
+                'message': 'Vendor registered successfully.' if vendor_status=='approved' else 'Vendor registration submitted successfully. Awaiting approval.',
                 'vendorId': vendor_id
             }), 201
             
@@ -379,7 +380,7 @@ def login_vendor():
                 'message': 'Invalid email or password'
             }), 401
         
-        if vendor['status'] != 'approved':
+        if vendor['status'] != 'approved' and vendor.get('category') != 'manufacturer':
             return jsonify({
                 'success': False,
                 'message': 'Your account is pending approval. Please contact administrator.'
@@ -1472,3 +1473,10 @@ if __name__ == '__main__':
     # Run the Flask app
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
+@app.route('/api/vendor/generate-qr', methods=['POST'])
+@token_required
+def generate_qr_alias(current_user):
+    """Alias for request_qr_code to match existing clients."""
+    return request_qr_code(current_user)
+
