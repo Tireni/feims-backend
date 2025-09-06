@@ -763,14 +763,8 @@ def generate_qr_code(current_user):
             for i in range(quantity):
                 qr_id = str(uuid.uuid4())
                 
-                qr_data = {
-                    'id': qr_id,
-                    'vendor_id': current_user['id'],
-                    'product_type': data['productType'],
-                    'size': data['size'],
-                    'type': data['type'],
-                    'generated_at': datetime.now().isoformat()
-                }
+                # Create URL instead of JSON data
+                qr_url = f"https://nfdrc.ng/feims/scan.php/{qr_id}"
                 
                 qr = qrcode.QRCode(
                     version=1,
@@ -778,7 +772,7 @@ def generate_qr_code(current_user):
                     box_size=10,
                     border=4,
                 )
-                qr.add_data(json.dumps(qr_data))
+                qr.add_data(qr_url)
                 qr.make(fit=True)
                 
                 img = qr.make_image(fill_color="#ff7b00", back_color="white")
@@ -844,7 +838,8 @@ def generate_qr_code(current_user):
                 
                 generated_codes.append({
                     'id': qr_id,
-                    'qrImage': f"data:image/png;base64,{img_str}"
+                    'qrImage': f"data:image/png;base64,{img_str}",
+                    'url': qr_url
                 })
             
             conn.commit()
@@ -872,6 +867,7 @@ def generate_qr_code(current_user):
             'success': False,
             'message': f'Error generating QR codes: {str(e)}'
         }), 500
+
 
 @app.route('/api/scan/<qr_id>', methods=['GET'])
 def scan_qr_code(qr_id):
