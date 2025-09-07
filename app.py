@@ -256,13 +256,6 @@ def init_db():
             )
         ''')
 
-        cursor.execute('''
-            ALTER TABLE sales MODIFY vendor_id VARCHAR(255) NOT NULL;
-            ALTER TABLE sales DROP FOREIGN KEY sales_ibfk_1;
-            ALTER TABLE vendor_entries MODIFY vendor_id VARCHAR(255) NOT NULL;
-            ALTER TABLE vendor_entries DROP FOREIGN KEY vendor_entries_ibfk_1;
-        ''')
-
         # Create services table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS services (
@@ -445,6 +438,13 @@ def init_db():
                 service_number VARCHAR(100) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        ''')
+
+        cursor.execute('''
+            ALTER TABLE sales MODIFY vendor_id VARCHAR(255) NOT NULL;
+            ALTER TABLE sales DROP FOREIGN KEY sales_ibfk_1;
+            ALTER TABLE vendor_entries MODIFY vendor_id VARCHAR(255) NOT NULL;
+            ALTER TABLE vendor_entries DROP FOREIGN KEY vendor_entries_ibfk_1;
         ''')
 
         conn.commit()
