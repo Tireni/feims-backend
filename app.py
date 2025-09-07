@@ -2143,6 +2143,171 @@ def submit_report(current_user):
             'success': False,
             'message': f'Error submitting report: {str(e)}'
         }), 500
+    
+
+@app.route('/api/mobile/vendors/register', methods=['POST'])
+def register_mobile_vendor():
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['fullName', 'username', 'password']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        # Validate username format
+        if not re.match(r'^[a-zA-Z0-9_]{3,20}$', data['username']):
+            return jsonify({
+                'success': False,
+                'message': 'Username must be 3-20 characters and can only contain letters, numbers, and underscores'
+            }), 400
+        
+        # Check if username already exists
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            cursor.execute('SELECT id FROM mobile_vendors WHERE username = %s', (data['username'],))
+            existing_vendor = cursor.fetchone()
+            
+            if existing_vendor:
+                return jsonify({
+                    'success': False,
+                    'message': 'Username already exists'
+                }), 409
+            
+            # Create the mobile_vendors table if it doesn't exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS mobile_vendors (
+                    id VARCHAR(255) PRIMARY KEY,
+                    full_name VARCHAR(255) NOT NULL,
+                    username VARCHAR(100) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            vendor_id = str(uuid.uuid4())
+            password_hash = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            
+            cursor.execute('''
+                INSERT INTO mobile_vendors (id, full_name, username, password_hash)
+                VALUES (%s, %s, %s, %s)
+            ''', (vendor_id, data['fullName'], data['username'], password_hash))
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Mobile vendor registered successfully',
+                'vendorId': vendor_id
+            }), 201
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error registering mobile vendor: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error registering mobile vendor: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in register_mobile_vendor: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/mobile/vendors/login', methods=['POST'])
+def login_mobile_vendor():
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('username') or not data.get('password'):
+            return jsonify({
+                'success': False,
+                'message': 'Username and password are required'
+            }), 400
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            # Create the mobile_vendors table if it doesn't exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS mobile_vendors (
+                    id VARCHAR(255) PRIMARY KEY,
+                    full_name VARCHAR(255) NOT NULL,
+                    username VARCHAR(100) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            cursor.execute('SELECT id, full_name, username, password_hash FROM mobile_vendors WHERE username = %s', (data['username'],))
+            vendor = cursor.fetchone()
+            
+            if not vendor:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid username or password'
+                }), 401
+            
+            if not bcrypt.checkpw(data['password'].encode('utf-8'), vendor['password_hash'].encode('utf-8')):
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid username or password'
+                }), 401
+            
+            # Generate JWT token for mobile vendors
+            token = jwt.encode({
+                'vendor_id': vendor['id'],
+                'username': vendor['username'],
+                'exp': datetime.now(timezone.utc) + timedelta(hours=24)
+            }, app.config['SECRET_KEY'], algorithm="HS256")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Login successful',
+                'token': token,
+                'vendor': {
+                    'id': vendor['id'],
+                    'fullName': vendor['full_name'],
+                    'username': vendor['username']
+                }
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error in mobile vendor login: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in login_mobile_vendor: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
 
 @app.route('/api/mobile/register', methods=['POST'])
 def mobile_register():
@@ -2545,6 +2710,62 @@ def register_officer():
         return jsonify({
             'success': False,
             'message': f'Error registering officer: {str(e)}'
+        }), 500
+    
+@app.route('/api/officers/login', methods=['POST'])
+def login_officer():
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('serviceNumber'):
+            return jsonify({
+                'success': False,
+                'message': 'Service number is required'
+            }), 400
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            cursor.execute('SELECT id, name, phone, service_number FROM officers WHERE service_number = %s', (data['serviceNumber'],))
+            officer = cursor.fetchone()
+            
+            if not officer:
+                return jsonify({
+                    'success': False,
+                    'message': 'Officer not found with this service number'
+                }), 404
+            
+            # For officers, we'll just return their data (no JWT token for now)
+            return jsonify({
+                'success': True,
+                'message': 'Login successful',
+                'officer': {
+                    'id': officer['id'],
+                    'name': officer['name'],
+                    'phone': officer['phone'],
+                    'serviceNumber': officer['service_number']
+                }
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error in officer login: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in login_officer: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
         }), 500
 
 @app.route('/api/system/health', methods=['GET'])
