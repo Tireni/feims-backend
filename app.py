@@ -150,6 +150,16 @@ def init_db():
                 FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
+
+        cursor.execute('''
+                CREATE TABLE IF NOT EXISTS mobile_vendors (
+                    id VARCHAR(255) PRIMARY KEY,
+                    full_name VARCHAR(255) NOT NULL,
+                    username VARCHAR(100) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+        ''')
         
         # Create qr_codes table
         cursor.execute('''
@@ -2187,15 +2197,6 @@ def register_mobile_vendor():
                 }), 409
             
             # Create the mobile_vendors table if it doesn't exist
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS mobile_vendors (
-                    id VARCHAR(255) PRIMARY KEY,
-                    full_name VARCHAR(255) NOT NULL,
-                    username VARCHAR(100) UNIQUE NOT NULL,
-                    password_hash VARCHAR(255) NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
             
             vendor_id = str(uuid.uuid4())
             password_hash = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
