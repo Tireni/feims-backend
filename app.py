@@ -1164,6 +1164,9 @@ def record_sale(current_user):
         cursor = conn.cursor()
         
         try:
+            # For mobile vendors, use their ID directly (they're not in vendors table)
+            vendor_id = current_user['id']
+            
             cursor.execute('''
                 INSERT INTO sales 
                 (id, vendor_id, product_type, quantity, amount, customer_name, customer_phone, 
@@ -1171,7 +1174,7 @@ def record_sale(current_user):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 sale_id,
-                current_user['id'],
+                vendor_id,
                 data['productType'],
                 data.get('quantity', 1),
                 data['amount'],
@@ -2647,8 +2650,7 @@ def vendor_entry(current_user):
         cursor = conn.cursor()
         
         try:
-            # For mobile vendors, store the vendor_id from their token
-            # For regular vendors, use their own ID
+            # For mobile vendors, use their ID directly
             vendor_id = current_user['id']
             
             cursor.execute('''
