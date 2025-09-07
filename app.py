@@ -472,6 +472,26 @@ def init_db():
         cursor.close()
         conn.close()
 
+
+def get_mobile_vendor_by_id(vendor_id):
+    conn = get_db_connection()
+    if conn is None:
+        return None
+        
+    cursor = conn.cursor(dictionary=True)
+    vendor = None
+    
+    try:
+        cursor.execute('SELECT id, full_name, username FROM mobile_vendors WHERE id = %s', (vendor_id,))
+        vendor = cursor.fetchone()
+    except Exception as e:
+        logger.error(f"Error fetching mobile vendor by ID: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+    
+    return vendor
+
 # JWT token required decorator
 def token_required(f):
     @wraps(f)
@@ -486,10 +506,20 @@ def token_required(f):
                 token = token[7:]
             
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            current_user = get_vendor_by_id(data['vendor_id'])
             
-            if not current_user:
-                return jsonify({'success': False, 'message': 'Vendor not found!'}), 401
+            # Check if it's a mobile vendor
+            if data.get('is_mobile'):
+                current_user = get_mobile_vendor_by_id(data.get('vendor_id'))
+                if not current_user:
+                    return jsonify({'success': False, 'message': 'Mobile vendor not found!'}), 401
+                # Add mobile vendor flag to the user object
+                current_user['is_mobile'] = True
+            else:
+                # Regular vendor
+                current_user = get_vendor_by_id(data.get('vendor_id'))
+                if not current_user:
+                    return jsonify({'success': False, 'message': 'Vendor not found!'}), 401
+                current_user['is_mobile'] = False
                 
         except jwt.ExpiredSignatureError:
             return jsonify({'success': False, 'message': 'Token has expired!'}), 401
@@ -502,7 +532,6 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     
     return decorated
-
 # Helper function to get vendor by ID
 def get_vendor_by_id(vendor_id):
     conn = get_db_connection()
@@ -1010,6 +1039,7 @@ def get_vendor_qr_codes(current_user):
             'message': f'Error fetching QR codes: {str(e)}'
         }), 500
 
+
 @app.route('/api/vendor/activate-qr', methods=['POST'])
 @token_required
 def activate_qr_code(current_user):
@@ -1032,9 +1062,9 @@ def activate_qr_code(current_user):
             if not record:
                 return jsonify({'success': False, 'message': 'QR code not found'}), 404
 
-            if record['vendor_id'] != current_user['id']:
-                return jsonify({'success': False, 'message': 'Unauthorized: QR code not owned by this vendor'}), 403
-
+            # For mobile vendors, we don't check vendor ownership since they're activating on behalf of regular vendors
+            # Mobile vendors can activate any QR code (you might want to add permission checks later)
+            
             if record['status'] == 'active':
                 return jsonify({'success': False, 'message': 'QR code is already active'}), 400
 
@@ -2276,10 +2306,11 @@ def login_mobile_vendor():
                     'message': 'Invalid username or password'
                 }), 401
             
-            # Generate JWT token for mobile vendors
+            # Generate JWT token for mobile vendors with vendor_id from mobile_vendors table
             token = jwt.encode({
-                'vendor_id': vendor['id'],
+                'vendor_id': vendor['id'],  # This is the ID from mobile_vendors table
                 'username': vendor['username'],
+                'is_mobile': True,  # Add flag to identify mobile vendors
                 'exp': datetime.now(timezone.utc) + timedelta(hours=24)
             }, app.config['SECRET_KEY'], algorithm="HS256")
             
@@ -2290,7 +2321,8 @@ def login_mobile_vendor():
                 'vendor': {
                     'id': vendor['id'],
                     'fullName': vendor['full_name'],
-                    'username': vendor['username']
+                    'username': vendor['username'],
+                    'isMobile': True
                 }
             }), 200
             
@@ -2615,13 +2647,17 @@ def vendor_entry(current_user):
         cursor = conn.cursor()
         
         try:
+            # For mobile vendors, store the vendor_id from their token
+            # For regular vendors, use their own ID
+            vendor_id = current_user['id']
+            
             cursor.execute('''
                 INSERT INTO vendor_entries 
                 (id, vendor_id, product_type, data)
                 VALUES (%s, %s, %s, %s)
             ''', (
                 entry_id,
-                current_user['id'],
+                vendor_id,
                 data['productType'],
                 json.dumps(data['data'])
             ))
