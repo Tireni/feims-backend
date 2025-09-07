@@ -122,6 +122,7 @@ def init_db():
     
     try:
         # Create vendors table
+        # Create vendors table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS vendors (
                 id VARCHAR(255) PRIMARY KEY,
@@ -138,7 +139,7 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         ''')
-        
+
         # Create vendor_documents table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS vendor_documents (
@@ -152,16 +153,16 @@ def init_db():
         ''')
 
         cursor.execute('''
-                CREATE TABLE IF NOT EXISTS mobile_vendors (
-                    id VARCHAR(255) PRIMARY KEY,
-                    full_name VARCHAR(255) NOT NULL,
-                    username VARCHAR(100) UNIQUE NOT NULL,
-                    password_hash VARCHAR(255) NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
+            CREATE TABLE IF NOT EXISTS mobile_vendors (
+                id VARCHAR(255) PRIMARY KEY,
+                full_name VARCHAR(255) NOT NULL,
+                username VARCHAR(100) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         ''')
-        
-        # Create qr_codes table
+
+        # Create qr_codes table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS qr_codes (
                 id VARCHAR(255) PRIMARY KEY,
@@ -172,11 +173,11 @@ def init_db():
                 qr_image TEXT NOT NULL,
                 status ENUM('active', 'inactive', 'pending') DEFAULT 'inactive',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                activated_at TIMESTAMP NULL,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                activated_at TIMESTAMP NULL
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
-        
+
         # Create table for existing fire extinguishers
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS existing_extinguishers (
@@ -195,7 +196,7 @@ def init_db():
                 FOREIGN KEY (qr_code_id) REFERENCES qr_codes(id) ON DELETE CASCADE
             )
         ''')
-        
+
         # Create table for new fire extinguishers
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS new_extinguishers (
@@ -216,7 +217,7 @@ def init_db():
                 FOREIGN KEY (qr_code_id) REFERENCES qr_codes(id) ON DELETE CASCADE
             )
         ''')
-        
+
         # Create table for DCP sachets
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS dcp_sachets (
@@ -239,6 +240,7 @@ def init_db():
             )
         ''')
 
+        # Create sales table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS sales (
                 id VARCHAR(255) PRIMARY KEY,
@@ -251,12 +253,12 @@ def init_db():
                 customer_email VARCHAR(255),
                 customer_address TEXT,
                 payment_method ENUM('cash', 'transfer', 'card', 'pos') NOT NULL DEFAULT 'cash',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
-        # Create services table
+        # Create services table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS services (
                 id VARCHAR(255) PRIMARY KEY,
@@ -270,12 +272,12 @@ def init_db():
                 customer_email VARCHAR(255),
                 customer_address TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE,
                 FOREIGN KEY (qr_code_id) REFERENCES qr_codes(id) ON DELETE CASCADE
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
-        # Create decommissions table
+        # Create decommissions table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS decommissions (
                 id VARCHAR(255) PRIMARY KEY,
@@ -287,12 +289,12 @@ def init_db():
                 notes TEXT,
                 evidence_path VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE,
                 FOREIGN KEY (qr_code_id) REFERENCES qr_codes(id) ON DELETE CASCADE
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
-        # Additional tables for Payments, Training, Compliance and Messaging
+        # Create payments table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS payments (
                 id VARCHAR(255) PRIMARY KEY,
@@ -305,8 +307,8 @@ def init_db():
                 aggregator_share DECIMAL(10, 2),
                 igr_share DECIMAL(10, 2),
                 vendor_share DECIMAL(10, 2),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
@@ -320,6 +322,7 @@ def init_db():
             )
         ''')
 
+        # Create certifications table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS certifications (
                 id VARCHAR(255) PRIMARY KEY,
@@ -328,11 +331,12 @@ def init_db():
                 staff_email VARCHAR(255),
                 staff_phone VARCHAR(20),
                 status ENUM('pending','approved','rejected') DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
+        # Create compliance_audits table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS compliance_audits (
                 id VARCHAR(255) PRIMARY KEY,
@@ -341,11 +345,12 @@ def init_db():
                 description TEXT,
                 result ENUM('pass','fail') NOT NULL,
                 notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
+        # Create notifications table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS notifications (
                 id VARCHAR(255) PRIMARY KEY,
@@ -354,22 +359,24 @@ def init_db():
                 message TEXT NOT NULL,
                 category ENUM('anomaly','complaint','compliance','info') NOT NULL,
                 is_read BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
+        # Create messages table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS messages (
                 id VARCHAR(255) PRIMARY KEY,
                 vendor_id VARCHAR(255) NOT NULL,
                 sender_type ENUM('vendor','admin') NOT NULL,
                 content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
+        # Create reports table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS reports (
                 id VARCHAR(255) PRIMARY KEY,
@@ -377,8 +384,8 @@ def init_db():
                 subject VARCHAR(255) NOT NULL,
                 description TEXT NOT NULL,
                 category ENUM('incident','suspicious_vendor','fraud','other') NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
@@ -417,15 +424,15 @@ def init_db():
             )
         ''')
 
-        # Vendor entries table
+        # Vendor entries table - Remove foreign key constraint for mobile vendors
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS vendor_entries (
                 id VARCHAR(255) PRIMARY KEY,
                 vendor_id VARCHAR(255) NOT NULL,
                 product_type ENUM('existing_extinguisher', 'new_extinguisher', 'dcp_sachet') NOT NULL,
                 data JSON NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- Removed foreign key: FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE
             )
         ''')
 
@@ -438,13 +445,6 @@ def init_db():
                 service_number VARCHAR(100) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
-
-        cursor.execute('''
-            ALTER TABLE sales MODIFY vendor_id VARCHAR(255) NOT NULL;
-            ALTER TABLE sales DROP FOREIGN KEY sales_ibfk_1;
-            ALTER TABLE vendor_entries MODIFY vendor_id VARCHAR(255) NOT NULL;
-            ALTER TABLE vendor_entries DROP FOREIGN KEY vendor_entries_ibfk_1;
         ''')
 
         conn.commit()
