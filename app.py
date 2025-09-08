@@ -3,7 +3,10 @@ from flask_cors import CORS
 import mysql.connector
 import uuid
 from datetime import datetime, timedelta, timezone
+<<<<<<< HEAD
 from collections import defaultdict
+=======
+>>>>>>> b7aeaab159fb897da878a88ea153dbd8cb713997
 import bcrypt
 import jwt
 import os
@@ -1857,6 +1860,7 @@ def admin_analytics(current_admin):
             'message': f'Error fetching analytics: {str(e)}'
         }), 500
 
+<<<<<<< HEAD
 @app.route('/api/admin/extinguisher-data', methods=['GET'])
 @admin_token_required
 def admin_extinguisher_data(current_admin):
@@ -2090,6 +2094,8 @@ def admin_real_time_metrics(current_admin):
 
 
 
+=======
+>>>>>>> b7aeaab159fb897da878a88ea153dbd8cb713997
 @app.route('/api/training-materials', methods=['GET'])
 @token_required
 def get_training_materials(current_user):
