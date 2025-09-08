@@ -120,6 +120,7 @@ def mobile_vendor_login():
                 'exp': datetime.now() + timedelta(hours=24)
             }, get_app().config['SECRET_KEY'], algorithm="HS256")
             
+            
             return jsonify({
                 'success': True,
                 'message': 'Login successful',
