@@ -6,8 +6,8 @@ import jwt
 import uuid
 from datetime import datetime, timedelta
 
-from utils import token_required, get_db_connection
-from main import app
+from utils import token_required, get_db_connection, get_app
+
 
 mobile_vendors_bp = Blueprint('mobile_vendors', __name__)
 
@@ -118,7 +118,7 @@ def mobile_vendor_login():
                 'vendor_id': vendor['id'],
                 'is_mobile': True,
                 'exp': datetime.now() + timedelta(hours=24)
-            }, app.config['SECRET_KEY'], algorithm="HS256")
+            }, get_app().config['SECRET_KEY'], algorithm="HS256")
             
             return jsonify({
                 'success': True,

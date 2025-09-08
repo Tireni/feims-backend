@@ -6,8 +6,7 @@ import jwt
 import uuid
 from datetime import datetime, timedelta
 
-from utils import token_required, get_db_connection, get_vendor_by_email
-from main import app
+from utils import token_required, get_db_connection, get_vendor_by_email, get_app
 
 vendors_bp = Blueprint('vendors', __name__)
 
@@ -125,7 +124,7 @@ def vendor_login():
         token = jwt.encode({
             'vendor_id': vendor['id'],
             'exp': datetime.now() + timedelta(hours=24)
-        }, app.config['SECRET_KEY'], algorithm="HS256")
+        }, get_app().config['SECRET_KEY'], algorithm="HS256")
         
         return jsonify({
             'success': True,

@@ -12,8 +12,8 @@ admin_bp = Blueprint('admin', __name__)
 @admin_bp.route('/login', methods=['POST'])
 def admin_login():
     try:
-        from utils import ADMIN_USERNAME, ADMIN_PASSWORD
-        from main import app
+        from utils import ADMIN_USERNAME, ADMIN_PASSWORD, get_app
+       
         import jwt
         
         data = request.get_json()
@@ -34,7 +34,7 @@ def admin_login():
             'username': data['username'],
             'role': 'admin',
             'exp': datetime.now() + timedelta(hours=24)
-        }, app.config['SECRET_KEY'], algorithm="HS256")
+        }, get_app().config['SECRET_KEY'], algorithm="HS256")
         
         return jsonify({
             'success': True,

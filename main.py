@@ -5,6 +5,7 @@ import os
 import logging
 from datetime import datetime, timezone
 from config import SECRET_KEY
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,7 +19,15 @@ CORS(app)  # Enable CORS for all routes
 # Secret key for JWT
 app.config['SECRET_KEY'] = SECRET_KEY
 
-# Import blueprints
+# Import and initialize database first
+from utils import init_db_pool, init_db
+
+# Initialize the database when the app starts
+with app.app_context():
+    init_db_pool()
+    init_db()
+
+# Import blueprints AFTER app creation
 from admin import admin_bp
 from vendors import vendors_bp
 from mobile_vendors import mobile_vendors_bp
@@ -31,14 +40,6 @@ app.register_blueprint(vendors_bp, url_prefix='/api/vendor')
 app.register_blueprint(mobile_vendors_bp, url_prefix='/api/mobile')
 app.register_blueprint(officers_bp, url_prefix='/api/officers')
 app.register_blueprint(shared_bp, url_prefix='/api')
-
-# Import and initialize database
-from utils import init_db_pool, init_db
-
-# Initialize the database when the app starts
-with app.app_context():
-    init_db_pool()
-    init_db()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
