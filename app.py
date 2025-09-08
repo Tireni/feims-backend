@@ -2088,8 +2088,6 @@ def admin_real_time_metrics(current_admin):
             'message': f'Error fetching real-time metrics: {str(e)}'
         }), 500
 
-
-
 @app.route('/api/training-materials', methods=['GET'])
 @token_required
 def get_training_materials(current_user):
