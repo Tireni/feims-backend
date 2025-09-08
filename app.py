@@ -15,6 +15,7 @@ import json
 import time
 import logging
 import re
+from collections import defaultdict
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
