@@ -1773,14 +1773,11 @@ def admin_reject_vendor(current_admin, vendor_id):
         }), 500
 
 # ===================== ADMIN APIs =====================
-# [ADMIN APIs] Route: /api/admin/qr-codes
+# [ADMIN APIs] Route: /api/admin/qr-codes (already exists but needs modification)
 @app.route('/api/admin/qr-codes', methods=['GET'])
 @admin_token_required
 def admin_get_qr_codes(current_admin):
     try:
-        status = request.args.get('status')
-        vendor_id = request.args.get('vendor_id')
-        
         conn = get_db_connection()
         if conn is None:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
@@ -1788,28 +1785,15 @@ def admin_get_qr_codes(current_admin):
         cursor = conn.cursor(dictionary=True)
         
         try:
-            query = '''
+            cursor.execute('''
                 SELECT q.id, q.product_type, q.size, q.type, q.status, q.created_at, q.activated_at,
-                       v.contact_name as vendor_name, v.email as vendor_email
+                       COALESCE(v.contact_name, mv.full_name) as vendor_name,
+                       COALESCE(v.email, mv.username) as vendor_contact
                 FROM qr_codes q
-                JOIN vendors v ON q.vendor_id = v.id
-            '''
-            params = []
-            
-            conditions = []
-            if status and status in ['active', 'inactive', 'pending']:
-                conditions.append('q.status = %s')
-                params.append(status)
-            if vendor_id:
-                conditions.append('q.vendor_id = %s')
-                params.append(vendor_id)
-            
-            if conditions:
-                query += ' WHERE ' + ' AND '.join(conditions)
-            
-            query += ' ORDER BY q.created_at DESC'
-            
-            cursor.execute(query, params)
+                LEFT JOIN vendors v ON q.vendor_id = v.id
+                LEFT JOIN mobile_vendors mv ON q.vendor_id = mv.id
+                ORDER BY q.created_at DESC
+            ''')
             qr_codes = cursor.fetchall()
             
             return jsonify({
@@ -1833,7 +1817,67 @@ def admin_get_qr_codes(current_admin):
             'success': False,
             'message': f'Error fetching QR codes: {str(e)}'
         }), 500
+    
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/qr-codes/update-status
+@app.route('/api/admin/qr-codes/<qr_id>/update-status', methods=['POST'])
+@admin_token_required
+def admin_update_qr_status(current_admin, qr_id):
+    try:
+        data = request.get_json()
+        
+        if not data or 'status' not in data or data['status'] not in ['active', 'inactive']:
+            return jsonify({
+                'success': False,
+                'message': 'Valid status (active/inactive) is required'
+            }), 400
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            if data['status'] == 'active':
+                cursor.execute('UPDATE qr_codes SET status = %s, activated_at = NOW() WHERE id = %s', 
+                              (data['status'], qr_id))
+            else:
+                cursor.execute('UPDATE qr_codes SET status = %s WHERE id = %s', 
+                              (data['status'], qr_id))
+            
+            if cursor.rowcount == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'QR code not found'
+                }), 404
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': f'QR code status updated to {data["status"]}'
+            }), 200
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error updating QR code status: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error updating QR code status: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in admin_update_qr_status: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error updating QR code status: {str(e)}'
+        }), 500
+    
 # ===================== ADMIN APIs =====================
 # [ADMIN APIs] Route: /api/admin/analytics
 @app.route('/api/admin/analytics', methods=['GET'])
