@@ -580,6 +580,8 @@ def get_vendor_by_email(email):
     
     return vendor
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendors/register
 @app.route('/api/vendors/register', methods=['POST'])
 def register_vendor():
     try:
@@ -655,6 +657,8 @@ def register_vendor():
             'message': f'Error: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendors/login
 @app.route('/api/vendors/login', methods=['POST'])
 def login_vendor():
     try:
@@ -712,6 +716,8 @@ def login_vendor():
             'message': f'Error: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendors/profile
 @app.route('/api/vendors/profile', methods=['GET'])
 @token_required
 def get_vendor_profile(current_user):
@@ -728,6 +734,8 @@ def get_vendor_profile(current_user):
             'message': f'Error: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendors
 @app.route('/api/vendors', methods=['GET'])
 @token_required
 def get_vendors(current_user):
@@ -764,6 +772,8 @@ def get_vendors(current_user):
             'message': f'Error: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/generate-qr
 @app.route('/api/vendor/generate-qr', methods=['POST'])
 @token_required
 def generate_qr_code(current_user):
@@ -917,6 +927,8 @@ def generate_qr_code(current_user):
         }), 500
 
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/scan/<qr_id>
 @app.route('/api/scan/<qr_id>', methods=['GET'])
 def scan_qr_code(qr_id):
     try:
@@ -1005,6 +1017,8 @@ def scan_qr_code(qr_id):
             'message': f'Error scanning QR code: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/qrcodes
 @app.route('/api/vendor/qrcodes', methods=['GET'])
 @token_required
 def get_vendor_qr_codes(current_user):
@@ -1048,6 +1062,8 @@ def get_vendor_qr_codes(current_user):
         }), 500
 
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/activate-qr
 @app.route('/api/vendor/activate-qr', methods=['POST'])
 @token_required
 def activate_qr_code(current_user):
@@ -1094,6 +1110,8 @@ def activate_qr_code(current_user):
         logger.error(f"Error in activate_qr_code: {e}")
         return jsonify({'success': False, 'message': f'Error activating QR code: {str(e)}'}), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendors/<vendor_id>
 @app.route('/api/vendors/<vendor_id>', methods=['PUT'])
 @token_required
 def update_vendor_status(current_user, vendor_id):
@@ -1146,6 +1164,8 @@ def update_vendor_status(current_user, vendor_id):
             'message': f'Error updating vendor status: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/sales
 @app.route('/api/vendor/sales', methods=['POST'])
 @token_required
 def record_sale(current_user):
@@ -1219,6 +1239,8 @@ def record_sale(current_user):
             'message': f'Error recording sale: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/sales
 @app.route('/api/vendor/sales', methods=['GET'])
 @token_required
 def get_sales(current_user):
@@ -1262,6 +1284,8 @@ def get_sales(current_user):
             'message': f'Error fetching sales: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/services
 @app.route('/api/vendor/services', methods=['POST'])
 @token_required
 def record_service(current_user):
@@ -1332,6 +1356,8 @@ def record_service(current_user):
             'message': f'Error recording service: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/services
 @app.route('/api/vendor/services', methods=['GET'])
 @token_required
 def get_services(current_user):
@@ -1376,6 +1402,8 @@ def get_services(current_user):
             'message': f'Error fetching services: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/decommissions
 @app.route('/api/vendor/decommissions', methods=['POST'])
 @token_required
 def record_decommission(current_user):
@@ -1442,6 +1470,8 @@ def record_decommission(current_user):
             'message': f'Error recording decommission: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/decommissions
 @app.route('/api/vendor/decommissions', methods=['GET'])
 @token_required
 def get_decommissions(current_user):
@@ -1486,6 +1516,8 @@ def get_decommissions(current_user):
             'message': f'Error fetching decommissions: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/login
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
     try:
@@ -1522,6 +1554,8 @@ def admin_login():
             'message': f'Error: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/dashboard
 @app.route('/api/admin/dashboard', methods=['GET'])
 @admin_token_required
 def admin_dashboard(current_admin):
@@ -1591,6 +1625,8 @@ def admin_dashboard(current_admin):
             'message': f'Error fetching dashboard data: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/vendors
 @app.route('/api/admin/vendors', methods=['GET'])
 @admin_token_required
 def admin_get_vendors(current_admin):
@@ -1644,6 +1680,8 @@ def admin_get_vendors(current_admin):
             'message': f'Error fetching vendors: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/vendors/<vendor_id>/approve
 @app.route('/api/admin/vendors/<vendor_id>/approve', methods=['POST'])
 @admin_token_required
 def admin_approve_vendor(current_admin, vendor_id):
@@ -1688,6 +1726,8 @@ def admin_approve_vendor(current_admin, vendor_id):
             'message': f'Error approving vendor: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/vendors/<vendor_id>/reject
 @app.route('/api/admin/vendors/<vendor_id>/reject', methods=['POST'])
 @admin_token_required
 def admin_reject_vendor(current_admin, vendor_id):
@@ -1732,6 +1772,8 @@ def admin_reject_vendor(current_admin, vendor_id):
             'message': f'Error rejecting vendor: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/qr-codes
 @app.route('/api/admin/qr-codes', methods=['GET'])
 @admin_token_required
 def admin_get_qr_codes(current_admin):
@@ -1792,6 +1834,8 @@ def admin_get_qr_codes(current_admin):
             'message': f'Error fetching QR codes: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/analytics
 @app.route('/api/admin/analytics', methods=['GET'])
 @admin_token_required
 def admin_analytics(current_admin):
@@ -1857,6 +1901,8 @@ def admin_analytics(current_admin):
             'message': f'Error fetching analytics: {str(e)}'
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/training-materials
 @app.route('/api/training-materials', methods=['GET'])
 @token_required
 def get_training_materials(current_user):
@@ -1893,6 +1939,8 @@ def get_training_materials(current_user):
             'message': f'Error fetching training materials: {str(e)}'
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/training-materials
 @app.route('/api/training-materials', methods=['POST'])
 @admin_token_required
 def add_training_material(current_admin):
@@ -1950,6 +1998,8 @@ def add_training_material(current_admin):
             'message': f'Error adding training material: {str(e)}'
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/notifications
 @app.route('/api/notifications', methods=['GET'])
 @token_required
 def get_notifications(current_user):
@@ -1992,6 +2042,8 @@ def get_notifications(current_user):
             'message': f'Error fetching notifications: {str(e)}'
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/notifications/<notification_id>/read
 @app.route('/api/notifications/<notification_id>/read', methods=['PUT'])
 @token_required
 def mark_notification_read(current_user, notification_id):
@@ -2034,6 +2086,8 @@ def mark_notification_read(current_user, notification_id):
             'message': f'Error updating notification: {str(e)}'
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/messages
 @app.route('/api/messages', methods=['GET'])
 @token_required
 def get_messages(current_user):
@@ -2076,6 +2130,8 @@ def get_messages(current_user):
             'message': f'Error fetching messages: {str(e)}'
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/messages
 @app.route('/api/messages', methods=['POST'])
 @token_required
 def send_message(current_user):
@@ -2133,6 +2189,8 @@ def send_message(current_user):
             'message': f'Error sending message: {str(e)}'
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/reports
 @app.route('/api/reports', methods=['POST'])
 @token_required
 def submit_report(current_user):
@@ -2197,6 +2255,8 @@ def submit_report(current_user):
         }), 500
     
 
+# ===================== MOBILE VENDORS APIs =====================
+# [MOBILE VENDORS APIs] Route: /api/mobile/vendors/register
 @app.route('/api/mobile/vendors/register', methods=['POST'])
 def register_mobile_vendor():
     try:
@@ -2273,6 +2333,8 @@ def register_mobile_vendor():
             'message': f'Error: {str(e)}'
         }), 500
 
+# ===================== MOBILE VENDORS APIs =====================
+# [MOBILE VENDORS APIs] Route: /api/mobile/vendors/login
 @app.route('/api/mobile/vendors/login', methods=['POST'])
 def login_mobile_vendor():
     try:
@@ -2354,6 +2416,8 @@ def login_mobile_vendor():
             'message': f'Error: {str(e)}'
         }), 500
 
+# ===================== MOBILE VENDORS APIs =====================
+# [MOBILE VENDORS APIs] Route: /api/mobile/register
 @app.route('/api/mobile/register', methods=['POST'])
 def mobile_register():
     try:
@@ -2418,6 +2482,8 @@ def mobile_register():
             'message': f'Error submitting training booking: {str(e)}'
         }), 500
 
+# ===================== MOBILE VENDORS APIs =====================
+# [MOBILE VENDORS APIs] Route: /api/mobile/scan/<qr_id>
 @app.route('/api/mobile/scan/<qr_id>', methods=['GET'])
 def mobile_scan_qr_code(qr_id):
     try:
@@ -2506,6 +2572,8 @@ def mobile_scan_qr_code(qr_id):
             'message': f'Error scanning QR code: {str(e)}'
         }), 500
 
+# ===================== MOBILE VENDORS APIs =====================
+# [MOBILE VENDORS APIs] Route: /api/mobile/payment
 @app.route('/api/mobile/payment', methods=['POST'])
 def mobile_payment():
     try:
@@ -2571,6 +2639,8 @@ def mobile_payment():
             'message': f'Error recording payment: {str(e)}'
         }), 500
 
+# ===================== MOBILE VENDORS APIs =====================
+# [MOBILE VENDORS APIs] Route: /api/mobile/entry
 @app.route('/api/mobile/entry', methods=['POST'])
 def mobile_entry():
     try:
@@ -2632,6 +2702,8 @@ def mobile_entry():
             'message': f'Error submitting entry: {str(e)}'
         }), 500
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/entries
 @app.route('/api/vendor/entries', methods=['POST'])
 @token_required
 def vendor_entry(current_user):
@@ -2698,6 +2770,8 @@ def vendor_entry(current_user):
             'message': f'Error submitting entry: {str(e)}'
         }), 500
 
+# ===================== OFFICERS APIs =====================
+# [OFFICERS APIs] Route: /api/officers
 @app.route('/api/officers', methods=['POST'])
 def register_officer():
     try:
@@ -2760,6 +2834,8 @@ def register_officer():
             'message': f'Error registering officer: {str(e)}'
         }), 500
     
+# ===================== OFFICERS APIs =====================
+# [OFFICERS APIs] Route: /api/officers/login
 @app.route('/api/officers/login', methods=['POST'])
 def login_officer():
     try:
@@ -2816,6 +2892,8 @@ def login_officer():
             'message': f'Error: {str(e)}'
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/system/health
 @app.route('/api/system/health', methods=['GET'])
 def system_health():
     """System health endpoint that returns application and database status."""
@@ -2847,6 +2925,8 @@ def system_health():
             "error": str(e)
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/system/backup
 @app.route('/api/system/backup', methods=['POST'])
 @admin_token_required
 def system_backup(current_admin):
@@ -2870,6 +2950,8 @@ def system_backup(current_admin):
             "message": f"Backup failed: {str(e)}"
         }), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /api/decommissions/upload
 @app.route('/api/decommissions/upload', methods=['POST'])
 @token_required
 def upload_decommission_evidence(current_user):
@@ -2903,6 +2985,8 @@ def upload_decommission_evidence(current_user):
         logger.error(f"Error uploading file: {e}")
         return jsonify({'success': False, 'message': f'Error uploading file: {str(e)}'}), 500
 
+# ===================== GENERAL / SHARED APIs =====================
+# [GENERAL / SHARED APIs] Route: /uploads/decommissions/<filename>
 @app.route('/uploads/decommissions/<filename>', methods=['GET'])
 def get_decommission_evidence(filename):
     """Serve uploaded decommission evidence files."""
@@ -2911,6 +2995,8 @@ def get_decommission_evidence(filename):
     except FileNotFoundError:
         return jsonify({'success': False, 'message': 'File not found'}), 404
 
+# ===================== MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs =====================
+# [MANUFACTURER / CONTRACTOR / SERVICING VENDORS APIs] Route: /api/vendor/dashboard
 @app.route('/api/vendor/dashboard', methods=['GET'])
 @token_required
 def vendor_dashboard(current_user):
@@ -2977,6 +3063,8 @@ def vendor_dashboard(current_user):
             'message': f'Error fetching dashboard data: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/extinguisher-data
 @app.route('/api/admin/extinguisher-data', methods=['GET'])
 @admin_token_required
 def admin_extinguisher_data(current_admin):
@@ -3066,6 +3154,8 @@ def admin_extinguisher_data(current_admin):
             'message': f'Error fetching extinguisher data: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/training-bookings
 @app.route('/api/admin/training-bookings', methods=['GET'])
 @admin_token_required
 def admin_training_bookings(current_admin):
@@ -3122,6 +3212,8 @@ def admin_training_bookings(current_admin):
             'message': f'Error fetching training bookings: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/real-time-metrics
 @app.route('/api/admin/real-time-metrics', methods=['GET'])
 @admin_token_required
 def admin_real_time_metrics(current_admin):
@@ -3208,6 +3300,8 @@ def admin_real_time_metrics(current_admin):
             'message': f'Error fetching real-time metrics: {str(e)}'
         }), 500
 
+# ===================== ADMIN APIs =====================
+# [ADMIN APIs] Route: /api/admin/vendors/<vendor_id>
 @app.route('/api/admin/vendors/<vendor_id>', methods=['GET'])
 @admin_token_required
 def admin_get_vendor_detail(current_admin, vendor_id):
