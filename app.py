@@ -3154,6 +3154,7 @@ def admin_extinguisher_data(current_admin):
             'message': f'Error fetching extinguisher data: {str(e)}'
         }), 500
 
+
 # ===================== ADMIN APIs =====================
 # [ADMIN APIs] Route: /api/admin/training-bookings
 @app.route('/api/admin/training-bookings', methods=['GET'])
