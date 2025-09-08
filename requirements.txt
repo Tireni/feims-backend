@@ -4,10 +4,6 @@ mysql-connector-python==8.1.0
 bcrypt==4.0.1
 PyJWT==2.8.0
 qrcode[pil]==7.4.2
-<<<<<<< HEAD
-Pillow==10.3.0
-=======
 Pillow==10.0.1
->>>>>>> b7aeaab159fb897da878a88ea153dbd8cb713997
 Werkzeug==2.3.7
 psutil==5.9.5

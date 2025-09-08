@@ -3,10 +3,6 @@ from flask_cors import CORS
 import mysql.connector
 import uuid
 from datetime import datetime, timedelta, timezone
-<<<<<<< HEAD
-from collections import defaultdict
-=======
->>>>>>> b7aeaab159fb897da878a88ea153dbd8cb713997
 import bcrypt
 import jwt
 import os
@@ -1860,242 +1856,6 @@ def admin_analytics(current_admin):
             'message': f'Error fetching analytics: {str(e)}'
         }), 500
 
-<<<<<<< HEAD
-@app.route('/api/admin/extinguisher-data', methods=['GET'])
-@admin_token_required
-def admin_extinguisher_data(current_admin):
-    """Get all fire extinguisher data from both mobile and vendor entries"""
-    try:
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-            
-        cursor = conn.cursor(dictionary=True)
-        
-        try:
-            # Get mobile entries
-            cursor.execute('''
-                SELECT id, product_type, data, created_at, 'mobile' as source
-                FROM mobile_entries 
-                ORDER BY created_at DESC
-            ''')
-            mobile_entries = cursor.fetchall()
-            
-            # Get vendor entries
-            cursor.execute('''
-                SELECT id, vendor_id, product_type, data, created_at, 'vendor' as source
-                FROM vendor_entries 
-                ORDER BY created_at DESC
-            ''')
-            vendor_entries = cursor.fetchall()
-            
-            # Process data to extract meaningful information
-            all_entries = []
-            for entry in mobile_entries + vendor_entries:
-                entry_data = json.loads(entry['data'])
-                processed_entry = {
-                    'id': entry['id'],
-                    'source': entry['source'],
-                    'product_type': entry['product_type'],
-                    'created_at': entry['created_at'],
-                    'data': entry_data
-                }
-                all_entries.append(processed_entry)
-            
-            # Generate summary statistics
-            summary = {
-                'total_entries': len(all_entries),
-                'by_source': {
-                    'mobile': len(mobile_entries),
-                    'vendor': len(vendor_entries)
-                },
-                'by_product_type': defaultdict(int),
-                'by_classification': defaultdict(int),
-                'by_state': defaultdict(int)
-            }
-            
-            for entry in all_entries:
-                summary['by_product_type'][entry['product_type']] += 1
-                
-                # Extract classification if available
-                if 'classification' in entry['data']:
-                    classification = entry['data']['classification']
-                    summary['by_classification'][classification] += 1
-                
-                # Extract state if available
-                if 'state' in entry['data']:
-                    state = entry['data']['state']
-                    summary['by_state'][state] += 1
-            
-            return jsonify({
-                'success': True,
-                'entries': all_entries,
-                'summary': summary
-            }), 200
-            
-        except Exception as e:
-            logger.error(f"Error fetching extinguisher data: {e}")
-            return jsonify({
-                'success': False,
-                'message': f'Error fetching extinguisher data: {str(e)}'
-            }), 500
-        finally:
-            cursor.close()
-            conn.close()
-        
-    except Exception as e:
-        logger.error(f"Error in admin_extinguisher_data: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error fetching extinguisher data: {str(e)}'
-        }), 500
-    
-@app.route('/api/admin/training-bookings', methods=['GET'])
-@admin_token_required
-def admin_training_bookings(current_admin):
-    """Get all training bookings with analytics"""
-    try:
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-            
-        cursor = conn.cursor(dictionary=True)
-        
-        try:
-            # Get all training bookings
-            cursor.execute('''
-                SELECT id, name, phone, plate_or_address, booking_date, booking_time, created_at
-                FROM training_bookings 
-                ORDER BY created_at DESC
-            ''')
-            bookings = cursor.fetchall()
-            
-            # Generate analytics
-            monthly_bookings = defaultdict(int)
-            for booking in bookings:
-                month = booking['booking_date'].strftime('%Y-%m') if isinstance(booking['booking_date'], datetime) else booking['booking_date'][:7]
-                monthly_bookings[month] += 1
-            
-            # Convert to list for frontend
-            monthly_data = [{'month': k, 'count': v} for k, v in monthly_bookings.items()]
-            monthly_data.sort(key=lambda x: x['month'])
-            
-            return jsonify({
-                'success': True,
-                'bookings': bookings,
-                'analytics': {
-                    'total': len(bookings),
-                    'monthly': monthly_data
-                }
-            }), 200
-            
-        except Exception as e:
-            logger.error(f"Error fetching training bookings: {e}")
-            return jsonify({
-                'success': False,
-                'message': f'Error fetching training bookings: {str(e)}'
-            }), 500
-        finally:
-            cursor.close()
-            conn.close()
-        
-    except Exception as e:
-        logger.error(f"Error in admin_training_bookings: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error fetching training bookings: {str(e)}'
-        }), 500
-
-@app.route('/api/admin/real-time-metrics', methods=['GET'])
-@admin_token_required
-def admin_real_time_metrics(current_admin):
-    """Get real-time system metrics"""
-    try:
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-            
-        cursor = conn.cursor(dictionary=True)
-        
-        try:
-            # Get counts for real-time dashboard
-            cursor.execute('SELECT COUNT(*) as count FROM vendors')
-            vendor_count = cursor.fetchone()['count']
-            
-            cursor.execute('SELECT COUNT(*) as count FROM qr_codes')
-            qr_count = cursor.fetchone()['count']
-            
-            cursor.execute('SELECT COUNT(*) as count FROM mobile_entries')
-            mobile_entries_count = cursor.fetchone()['count']
-            
-            cursor.execute('SELECT COUNT(*) as count FROM vendor_entries')
-            vendor_entries_count = cursor.fetchone()['count']
-            
-            cursor.execute('SELECT COUNT(*) as count FROM training_bookings')
-            training_count = cursor.fetchone()['count']
-            
-            # Get recent activities (last 24 hours)
-            cursor.execute('''
-                (SELECT 'vendor_registration' as type, contact_name as name, created_at 
-                 FROM vendors WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
-                UNION ALL
-                (SELECT 'qr_generated' as type, product_type as name, created_at 
-                 FROM qr_codes WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
-                UNION ALL
-                (SELECT 'training_booking' as type, name, created_at 
-                 FROM training_bookings WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
-                UNION ALL
-                (SELECT 'extinguisher_entry' as type, 'Mobile Entry' as name, created_at 
-                 FROM mobile_entries WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
-                UNION ALL
-                (SELECT 'extinguisher_entry' as type, 'Vendor Entry' as name, created_at 
-                 FROM vendor_entries WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
-                ORDER BY created_at DESC LIMIT 20
-            ''')
-            recent_activities = cursor.fetchall()
-            
-            # Get system performance metrics
-            performance_metrics = {
-                'response_time': round(time.process_time() * 1000, 2),  # Simulated response time
-                'memory_usage': 45,  # Simulated memory usage
-                'cpu_usage': 25,     # Simulated CPU usage
-                'active_connections': db_pool._concurrent_connections if db_pool else 0
-            }
-            
-            return jsonify({
-                'success': True,
-                'metrics': {
-                    'vendors': vendor_count,
-                    'qr_codes': qr_count,
-                    'mobile_entries': mobile_entries_count,
-                    'vendor_entries': vendor_entries_count,
-                    'training_bookings': training_count
-                },
-                'recent_activities': recent_activities,
-                'performance': performance_metrics
-            }), 200
-            
-        except Exception as e:
-            logger.error(f"Error fetching real-time metrics: {e}")
-            return jsonify({
-                'success': False,
-                'message': f'Error fetching real-time metrics: {str(e)}'
-            }), 500
-        finally:
-            cursor.close()
-            conn.close()
-        
-    except Exception as e:
-        logger.error(f"Error in admin_real_time_metrics: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error fetching real-time metrics: {str(e)}'
-        }), 500
-
-
-
-=======
->>>>>>> b7aeaab159fb897da878a88ea153dbd8cb713997
 @app.route('/api/training-materials', methods=['GET'])
 @token_required
 def get_training_materials(current_user):
@@ -3214,6 +2974,237 @@ def vendor_dashboard(current_user):
         return jsonify({
             'success': False,
             'message': f'Error fetching dashboard data: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/extinguisher-data', methods=['GET'])
+@admin_token_required
+def admin_extinguisher_data(current_admin):
+    """Get all fire extinguisher data from both mobile and vendor entries"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            # Get mobile entries
+            cursor.execute('''
+                SELECT id, product_type, data, created_at, 'mobile' as source
+                FROM mobile_entries 
+                ORDER BY created_at DESC
+            ''')
+            mobile_entries = cursor.fetchall()
+            
+            # Get vendor entries
+            cursor.execute('''
+                SELECT id, vendor_id, product_type, data, created_at, 'vendor' as source
+                FROM vendor_entries 
+                ORDER BY created_at DESC
+            ''')
+            vendor_entries = cursor.fetchall()
+            
+            # Process data to extract meaningful information
+            all_entries = []
+            for entry in mobile_entries + vendor_entries:
+                entry_data = json.loads(entry['data'])
+                processed_entry = {
+                    'id': entry['id'],
+                    'source': entry['source'],
+                    'product_type': entry['product_type'],
+                    'created_at': entry['created_at'],
+                    'data': entry_data
+                }
+                all_entries.append(processed_entry)
+            
+            # Generate summary statistics
+            summary = {
+                'total_entries': len(all_entries),
+                'by_source': {
+                    'mobile': len(mobile_entries),
+                    'vendor': len(vendor_entries)
+                },
+                'by_product_type': defaultdict(int),
+                'by_classification': defaultdict(int),
+                'by_state': defaultdict(int)
+            }
+            
+            for entry in all_entries:
+                summary['by_product_type'][entry['product_type']] += 1
+                
+                # Extract classification if available
+                if 'classification' in entry['data']:
+                    classification = entry['data']['classification']
+                    summary['by_classification'][classification] += 1
+                
+                # Extract state if available
+                if 'state' in entry['data']:
+                    state = entry['data']['state']
+                    summary['by_state'][state] += 1
+            
+            return jsonify({
+                'success': True,
+                'entries': all_entries,
+                'summary': summary
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching extinguisher data: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching extinguisher data: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in admin_extinguisher_data: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching extinguisher data: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/training-bookings', methods=['GET'])
+@admin_token_required
+def admin_training_bookings(current_admin):
+    """Get all training bookings with analytics"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            # Get all training bookings
+            cursor.execute('''
+                SELECT id, name, phone, plate_or_address, booking_date, booking_time, created_at
+                FROM training_bookings 
+                ORDER BY created_at DESC
+            ''')
+            bookings = cursor.fetchall()
+            
+            # Generate analytics
+            monthly_bookings = defaultdict(int)
+            for booking in bookings:
+                month = booking['booking_date'].strftime('%Y-%m') if isinstance(booking['booking_date'], datetime) else booking['booking_date'][:7]
+                monthly_bookings[month] += 1
+            
+            # Convert to list for frontend
+            monthly_data = [{'month': k, 'count': v} for k, v in monthly_bookings.items()]
+            monthly_data.sort(key=lambda x: x['month'])
+            
+            return jsonify({
+                'success': True,
+                'bookings': bookings,
+                'analytics': {
+                    'total': len(bookings),
+                    'monthly': monthly_data
+                }
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching training bookings: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching training bookings: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in admin_training_bookings: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching training bookings: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/real-time-metrics', methods=['GET'])
+@admin_token_required
+def admin_real_time_metrics(current_admin):
+    """Get real-time system metrics"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor(dictionary=True)
+        
+        try:
+            # Get counts for real-time dashboard
+            cursor.execute('SELECT COUNT(*) as count FROM vendors')
+            vendor_count = cursor.fetchone()['count']
+            
+            cursor.execute('SELECT COUNT(*) as count FROM qr_codes')
+            qr_count = cursor.fetchone()['count']
+            
+            cursor.execute('SELECT COUNT(*) as count FROM mobile_entries')
+            mobile_entries_count = cursor.fetchone()['count']
+            
+            cursor.execute('SELECT COUNT(*) as count FROM vendor_entries')
+            vendor_entries_count = cursor.fetchone()['count']
+            
+            cursor.execute('SELECT COUNT(*) as count FROM training_bookings')
+            training_count = cursor.fetchone()['count']
+            
+            # Get recent activities (last 24 hours)
+            cursor.execute('''
+                (SELECT 'vendor_registration' as type, contact_name as name, created_at 
+                 FROM vendors WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
+                UNION ALL
+                (SELECT 'qr_generated' as type, product_type as name, created_at 
+                 FROM qr_codes WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
+                UNION ALL
+                (SELECT 'training_booking' as type, name, created_at 
+                 FROM training_bookings WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
+                UNION ALL
+                (SELECT 'extinguisher_entry' as type, 'Mobile Entry' as name, created_at 
+                 FROM mobile_entries WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
+                UNION ALL
+                (SELECT 'extinguisher_entry' as type, 'Vendor Entry' as name, created_at 
+                 FROM vendor_entries WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR))
+                ORDER BY created_at DESC LIMIT 20
+            ''')
+            recent_activities = cursor.fetchall()
+            
+            # Get system performance metrics
+            performance_metrics = {
+                'response_time': round(time.process_time() * 1000, 2),  # Simulated response time
+                'memory_usage': 45,  # Simulated memory usage
+                'cpu_usage': 25,     # Simulated CPU usage
+                'active_connections': db_pool._concurrent_connections if db_pool else 0
+            }
+            
+            return jsonify({
+                'success': True,
+                'metrics': {
+                    'vendors': vendor_count,
+                    'qr_codes': qr_count,
+                    'mobile_entries': mobile_entries_count,
+                    'vendor_entries': vendor_entries_count,
+                    'training_bookings': training_count
+                },
+                'recent_activities': recent_activities,
+                'performance': performance_metrics
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching real-time metrics: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching real-time metrics: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in admin_real_time_metrics: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching real-time metrics: {str(e)}'
         }), 500
 
 @app.route('/api/admin/vendors/<vendor_id>', methods=['GET'])
