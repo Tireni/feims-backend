@@ -2089,6 +2089,7 @@ def admin_real_time_metrics(current_admin):
         }), 500
 
 
+
 @app.route('/api/training-materials', methods=['GET'])
 @token_required
 def get_training_materials(current_user):
