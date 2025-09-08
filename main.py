@@ -4,7 +4,7 @@ from flask_cors import CORS
 import os
 import logging
 from datetime import datetime, timezone
-
+from config import SECRET_KEY
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Secret key for JWT
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'feims-secret-key-2025'
+app.config['SECRET_KEY'] = SECRET_KEY
 
 # Import blueprints
 from admin import admin_bp
