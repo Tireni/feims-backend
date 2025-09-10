@@ -2,14 +2,17 @@
 from flask import Blueprint, jsonify, request
 import mysql.connector
 import uuid
-
+import logging
 from utils import get_db_connection
 
 shared_bp = Blueprint('shared', __name__)
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # ===================== SHARED APIs =====================
 @shared_bp.route('/scan/<qr_id>', methods=['GET'])
-def verify_qr(qr_id):
+def scan_qr_code(qr_id):
     try:
         conn = get_db_connection()
         if conn is None:
@@ -18,14 +21,9 @@ def verify_qr(qr_id):
         cursor = conn.cursor(dictionary=True)
         
         try:
-            # Check if QR code exists
             cursor.execute('''
-                SELECT q.id, q.product_type, q.size, q.type, q.status, q.created_at, q.activated_at,
-                       COALESCE(v.contact_name, mv.full_name) as vendor_name
-                FROM qr_codes q
-                LEFT JOIN vendors v ON q.vendor_id = v.id
-                LEFT JOIN mobile_vendors mv ON q.vendor_id = mv.id
-                WHERE q.id = %s
+                SELECT id, product_type, size, type, status, created_at, activated_at, vendor_id
+                FROM qr_codes WHERE id = %s
             ''', (qr_id,))
             
             qr_code = cursor.fetchone()
@@ -36,62 +34,71 @@ def verify_qr(qr_id):
                     'message': 'QR code not found'
                 }), 404
             
-            # Get product details based on product type
-            product_details = None
+            product_info = {}
+            
             if qr_code['product_type'] == 'existing_extinguisher':
                 cursor.execute('''
-                    SELECT * FROM existing_extinguishers 
-                    WHERE qr_code_id = %s
+                    SELECT plate_number, building_address, manufacturing_date, expiry_date,
+                           engraved_id, phone_number, manufacturer_name, state, local_government
+                    FROM existing_extinguishers WHERE qr_code_id = %s
                 ''', (qr_id,))
-                product_details = cursor.fetchone()
+                product_info = cursor.fetchone()
+                
             elif qr_code['product_type'] == 'new_extinguisher':
                 cursor.execute('''
-                    SELECT * FROM new_extinguishers 
-                    WHERE qr_code_id = %s
+                    SELECT manufacturer_name, son_number, ncs_receipt_number, ffs_fat_id,
+                           distributor_name, manufacturing_date, expiry_date, engraved_id,
+                           phone_number, state, local_government
+                    FROM new_extinguishers WHERE qr_code_id = %s
                 ''', (qr_id,))
-                product_details = cursor.fetchone()
+                product_info = cursor.fetchone()
+                
             elif qr_code['product_type'] == 'dcp_sachet':
                 cursor.execute('''
-                    SELECT * FROM dcp_sachets 
-                    WHERE qr_code_id = %s
+                    SELECT manufacturer_name, son_number, ncs_receipt_number, ffs_fat_id,
+                           distributor_name, packaging_company, manufacturing_date, expiry_date,
+                           batch_lot_id, phone_number, state, local_government
+                    FROM dcp_sachets WHERE qr_code_id = %s
                 ''', (qr_id,))
-                product_details = cursor.fetchone()
+                product_info = cursor.fetchone()
             
-            # Get service history
-            cursor.execute('''
-                SELECT service_type, description, amount, customer_name, customer_phone, created_at
-                FROM services 
-                WHERE qr_code_id = %s
-                ORDER BY created_at DESC
-            ''', (qr_id,))
-            service_history = cursor.fetchall()
+            if not product_info:
+                return jsonify({
+                    'success': False,
+                    'message': 'Product information not found'
+                }), 404
             
             return jsonify({
                 'success': True,
-                'qrCode': qr_code,
-                'productDetails': product_details,
-                'serviceHistory': service_history
+                'qrCode': {
+                    'id': qr_code['id'],
+                    'productType': qr_code['product_type'],
+                    'size': qr_code['size'],
+                    'type': qr_code['type'],
+                    'status': qr_code['status'],
+                    'createdAt': qr_code['created_at'],
+                    'activatedAt': qr_code['activated_at']
+                },
+                'productInfo': product_info
             }), 200
             
         except Exception as e:
-            from utils import logger
-            logger.error(f"Error verifying QR code: {e}")
+            logger.error(f"Error scanning QR code: {e}")
             return jsonify({
                 'success': False,
-                'message': f'Error verifying QR code: {str(e)}'
+                'message': f'Error scanning QR code: {str(e)}'
             }), 500
         finally:
             cursor.close()
             conn.close()
         
     except Exception as e:
-        from utils import logger
-        logger.error(f"Error in verify_qr: {e}")
+        logger.error(f"Error in scan_qr_code: {e}")
         return jsonify({
             'success': False,
-            'message': f'Error verifying QR code: {str(e)}'
+            'message': f'Error scanning QR code: {str(e)}'
         }), 500
-
+    
 @shared_bp.route('/vendors', methods=['GET'])
 def vendor_locator():
     try:
