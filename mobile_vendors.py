@@ -8,6 +8,12 @@ from datetime import datetime, timedelta
 
 from utils import token_required, get_db_connection
 from flask import current_app
+import json
+import logging
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 mobile_vendors_bp = Blueprint('mobile_vendors', __name__)
@@ -211,25 +217,25 @@ def training_booking():
             'success': False,
             'message': f'Error creating training booking: {str(e)}'
         }), 500
+    
 
 @mobile_vendors_bp.route('/entry', methods=['POST'])
-def mobile_capture_data():
+def mobile_entry():
     try:
         data = request.get_json()
         
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
         required_fields = ['productType', 'data']
         for field in required_fields:
-            if not data.get(field):
+            if field not in data or not data[field]:
                 return jsonify({
                     'success': False,
                     'message': f'{field} is required'
                 }), 400
         
-        if data['productType'] not in ['existing_extinguisher', 'new_extinguisher', 'dcp_sachet']:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid product type'
-            }), 400
+        entry_id = str(uuid.uuid4())
         
         conn = get_db_connection()
         if conn is None:
@@ -238,9 +244,9 @@ def mobile_capture_data():
         cursor = conn.cursor()
         
         try:
-            entry_id = str(uuid.uuid4())
             cursor.execute('''
-                INSERT INTO mobile_entries (id, product_type, data)
+                INSERT INTO mobile_entries 
+                (id, product_type, data)
                 VALUES (%s, %s, %s)
             ''', (
                 entry_id,
@@ -252,29 +258,28 @@ def mobile_capture_data():
             
             return jsonify({
                 'success': True,
-                'message': 'Data captured successfully'
+                'message': 'Entry submitted successfully',
+                'entryId': entry_id
             }), 201
             
         except Exception as e:
             conn.rollback()
-            from utils import logger
-            logger.error(f"Error capturing data: {e}")
+            logger.error(f"Error submitting entry: {e}")
             return jsonify({
                 'success': False,
-                'message': f'Error capturing data: {str(e)}'
+                'message': f'Error submitting entry: {str(e)}'
             }), 500
         finally:
             cursor.close()
             conn.close()
         
     except Exception as e:
-        from utils import logger
-        logger.error(f"Error in mobile_capture_data: {e}")
+        logger.error(f"Error in mobile_entry: {e}")
         return jsonify({
             'success': False,
-            'message': f'Error capturing data: {str(e)}'
+            'message': f'Error submitting entry: {str(e)}'
         }), 500
-
+    
 @mobile_vendors_bp.route('/entries', methods=['POST'])
 @token_required
 def vendor_capture_data(current_vendor):
@@ -303,6 +308,26 @@ def vendor_capture_data(current_vendor):
         
         try:
             entry_id = str(uuid.uuid4())
+            
+            # Extract data for QR code creation
+            product_data = data['data']
+            
+            # Create QR code entry first
+            qr_code_id = str(uuid.uuid4())
+            cursor.execute('''
+                INSERT INTO qr_codes (id, vendor_id, product_type, size, type, qr_image, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                qr_code_id,
+                current_vendor['id'],
+                data['productType'],
+                product_data.get('size', ''),
+                product_data.get('type', ''),
+                '',  # Empty QR image for now
+                'inactive'
+            ))
+            
+            # Create the vendor entry
             cursor.execute('''
                 INSERT INTO vendor_entries (id, vendor_id, product_type, data)
                 VALUES (%s, %s, %s, %s)
@@ -317,7 +342,9 @@ def vendor_capture_data(current_vendor):
             
             return jsonify({
                 'success': True,
-                'message': 'Data captured successfully'
+                'message': 'Data captured successfully',
+                'qrCodeId': qr_code_id,
+                'entryId': entry_id
             }), 201
             
         except Exception as e:
@@ -342,86 +369,68 @@ def vendor_capture_data(current_vendor):
 
 @mobile_vendors_bp.route('/activate-qr', methods=['POST'])
 @token_required
-def vendor_activate_qr(current_vendor):
+def activate_qr_code(current_user):
+    """Immediate activation for vendor-provided QR ID."""
     try:
-        data = request.get_json()
-        
-        if not data or not data.get('qrId'):
-            return jsonify({
-                'success': False,
-                'message': 'QR ID is required'
-            }), 400
-        
+        data = request.get_json() or {}
+        qr_id = data.get('qrId')
+        if not qr_id:
+            return jsonify({'success': False, 'message': 'QR code ID is required'}), 400
+
         conn = get_db_connection()
         if conn is None:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
             
-        cursor = conn.cursor()
-        
+        cursor = conn.cursor(dictionary=True)
+
         try:
-            # Check if QR code exists and belongs to this vendor
-            cursor.execute('SELECT id FROM qr_codes WHERE id = %s AND vendor_id = %s', (data['qrId'], current_vendor['id']))
-            if not cursor.fetchone():
-                return jsonify({
-                    'success': False,
-                    'message': 'QR code not found or does not belong to this vendor'
-                }), 404
+            cursor.execute('SELECT vendor_id, status FROM qr_codes WHERE id = %s', (qr_id,))
+            record = cursor.fetchone()
+            if not record:
+                return jsonify({'success': False, 'message': 'QR code not found'}), 404
+
+            # For mobile vendors, we don't check vendor ownership since they're activating on behalf of regular vendors
+            # Mobile vendors can activate any QR code (you might want to add permission checks later)
             
-            # Activate the QR code
-            cursor.execute('UPDATE qr_codes SET status = "active", activated_at = NOW() WHERE id = %s', (data['qrId'],))
-            
+            if record['status'] == 'active':
+                return jsonify({'success': False, 'message': 'QR code is already active'}), 400
+
+            # Immediate activation
+            cursor.execute('UPDATE qr_codes SET status = %s, activated_at = NOW() WHERE id = %s', ('active', qr_id))
             conn.commit()
             
-            return jsonify({
-                'success': True,
-                'message': 'QR code activated successfully'
-            }), 200
+            return jsonify({'success': True, 'message': 'QR code activated successfully'}), 200
             
         except Exception as e:
             conn.rollback()
-            from utils import logger
             logger.error(f"Error activating QR code: {e}")
-            return jsonify({
-                'success': False,
-                'message': f'Error activating QR code: {str(e)}'
-            }), 500
+            return jsonify({'success': False, 'message': f'Error activating QR code: {str(e)}'}), 500
         finally:
             cursor.close()
             conn.close()
-        
+            
     except Exception as e:
-        from utils import logger
-        logger.error(f"Error in vendor_activate_qr: {e}")
-        return jsonify({
-            'success': False,
-            'message': f'Error activating QR code: {str(e)}'
-        }), 500
+        logger.error(f"Error in activate_qr_code: {e}")
+        return jsonify({'success': False, 'message': f'Error activating QR code: {str(e)}'}), 500
 
 @mobile_vendors_bp.route('/sales', methods=['POST'])
 @token_required
-def vendor_record_sale(current_vendor):
+def record_sale(current_user):
     try:
         data = request.get_json()
         
-        required_fields = ['productType', 'quantity', 'amount', 'customerName', 'customerPhone', 'paymentMethod']
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['productType', 'amount', 'customerName', 'customerPhone']
         for field in required_fields:
-            if not data.get(field):
+            if field not in data or not data[field]:
                 return jsonify({
                     'success': False,
                     'message': f'{field} is required'
                 }), 400
         
-        if data['productType'] not in ['extinguisher', 'dcp', 'accessory', 'service']:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid product type'
-            }), 400
-        
-        if data['paymentMethod'] not in ['cash', 'transfer', 'card', 'pos']:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid payment method'
-            }), 400
+        sale_id = str(uuid.uuid4())
         
         conn = get_db_connection()
         if conn is None:
@@ -430,33 +439,37 @@ def vendor_record_sale(current_vendor):
         cursor = conn.cursor()
         
         try:
-            sale_id = str(uuid.uuid4())
+            # For mobile vendors, use their ID directly (they're not in vendors table)
+            vendor_id = current_user['id']
+            
             cursor.execute('''
-                INSERT INTO sales (id, vendor_id, product_type, quantity, amount, customer_name, customer_phone, customer_email, customer_address, payment_method)
+                INSERT INTO sales 
+                (id, vendor_id, product_type, quantity, amount, customer_name, customer_phone, 
+                 customer_email, customer_address, payment_method)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 sale_id,
-                current_vendor['id'],
+                vendor_id,
                 data['productType'],
-                data['quantity'],
+                data.get('quantity', 1),
                 data['amount'],
                 data['customerName'],
                 data['customerPhone'],
                 data.get('customerEmail'),
                 data.get('customerAddress'),
-                data['paymentMethod']
+                data.get('paymentMethod', 'cash')
             ))
             
             conn.commit()
             
             return jsonify({
                 'success': True,
-                'message': 'Sale recorded successfully'
+                'message': 'Sale recorded successfully',
+                'saleId': sale_id
             }), 201
             
         except Exception as e:
             conn.rollback()
-            from utils import logger
             logger.error(f"Error recording sale: {e}")
             return jsonify({
                 'success': False,
@@ -467,9 +480,76 @@ def vendor_record_sale(current_vendor):
             conn.close()
         
     except Exception as e:
-        from utils import logger
-        logger.error(f"Error in vendor_record_sale: {e}")
+        logger.error(f"Error in record_sale: {e}")
         return jsonify({
             'success': False,
             'message': f'Error recording sale: {str(e)}'
+        }), 500
+
+
+
+@mobile_vendors_bp.route('/fireentries', methods=['POST'])
+@token_required
+def vendor_entry(current_user):
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['productType', 'data']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        entry_id = str(uuid.uuid4())
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            # For mobile vendors, use their ID directly
+            vendor_id = current_user['id']
+            
+            cursor.execute('''
+                INSERT INTO vendor_entries 
+                (id, vendor_id, product_type, data)
+                VALUES (%s, %s, %s, %s)
+            ''', (
+                entry_id,
+                vendor_id,
+                data['productType'],
+                json.dumps(data['data'])
+            ))
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Entry submitted successfully',
+                'entryId': entry_id
+            }), 201
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error submitting entry: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error submitting entry: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in vendor_entry: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error submitting entry: {str(e)}'
         }), 500

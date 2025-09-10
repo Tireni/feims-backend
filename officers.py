@@ -131,3 +131,64 @@ def officer_login():
             'success': False,
             'message': f'Error logging in: {str(e)}'
         }), 500
+    
+@officers_bp.route('/mobile/entry', methods=['POST'])
+def mobile_entry():
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        required_fields = ['productType', 'data']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({
+                    'success': False,
+                    'message': f'{field} is required'
+                }), 400
+        
+        entry_id = str(uuid.uuid4())
+        
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO mobile_entries 
+                (id, product_type, data)
+                VALUES (%s, %s, %s)
+            ''', (
+                entry_id,
+                data['productType'],
+                json.dumps(data['data'])
+            ))
+            
+            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Entry submitted successfully',
+                'entryId': entry_id
+            }), 201
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error submitting entry: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Error submitting entry: {str(e)}'
+            }), 500
+        finally:
+            cursor.close()
+            conn.close()
+        
+    except Exception as e:
+        logger.error(f"Error in mobile_entry: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error submitting entry: {str(e)}'
+        }), 500
