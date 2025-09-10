@@ -1,10 +1,14 @@
 # officers.py
+import json
 from flask import Blueprint, jsonify, request
 import mysql.connector
 import uuid
 from datetime import datetime
-
+import logging
 from utils import get_db_connection
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 officers_bp = Blueprint('officers', __name__)
 

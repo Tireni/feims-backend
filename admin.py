@@ -1,3 +1,4 @@
+import json
 from flask import Blueprint, jsonify, request, current_app
 import mysql.connector
 from collections import defaultdict
@@ -786,20 +787,82 @@ def admin_get_mobile_entries(current_admin):
         cursor = conn.cursor(dictionary=True)
         
         try:
-            cursor.execute('''
+            # Get optional query parameters for filtering
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            product_type = request.args.get('product_type')
+            date_from = request.args.get('date_from')
+            date_to = request.args.get('date_to')
+            
+            offset = (page - 1) * limit
+            
+            # Build the base query
+            query = '''
                 SELECT id, product_type, data, created_at
                 FROM mobile_entries 
-                ORDER BY created_at DESC
-            ''')
+                WHERE 1=1
+            '''
+            params = []
+            
+            # Add filters if provided
+            if product_type and product_type in ['existing_extinguisher', 'new_extinguisher', 'dcp_sachet']:
+                query += ' AND product_type = %s'
+                params.append(product_type)
+                
+            if date_from:
+                query += ' AND DATE(created_at) >= %s'
+                params.append(date_from)
+                
+            if date_to:
+                query += ' AND DATE(created_at) <= %s'
+                params.append(date_to)
+            
+            # Add ordering and pagination
+            query += ' ORDER BY created_at DESC LIMIT %s OFFSET %s'
+            params.extend([limit, offset])
+            
+            cursor.execute(query, params)
             mobile_entries = cursor.fetchall()
+            
+            # Get total count for pagination
+            count_query = 'SELECT COUNT(*) as total FROM mobile_entries WHERE 1=1'
+            count_params = []
+            
+            if product_type and product_type in ['existing_extinguisher', 'new_extinguisher', 'dcp_sachet']:
+                count_query += ' AND product_type = %s'
+                count_params.append(product_type)
+                
+            if date_from:
+                count_query += ' AND DATE(created_at) >= %s'
+                count_params.append(date_from)
+                
+            if date_to:
+                count_query += ' AND DATE(created_at) <= %s'
+                count_params.append(date_to)
+            
+            cursor.execute(count_query, count_params)
+            total_count = cursor.fetchone()['total']
+            
+            # Parse JSON data if it's stored as string
+            for entry in mobile_entries:
+                if isinstance(entry['data'], str):
+                    try:
+                        entry['data'] = json.loads(entry['data'])
+                    except json.JSONDecodeError:
+                        entry['data'] = {}
             
             return jsonify({
                 'success': True,
-                'mobileEntries': mobile_entries
+                'mobileEntries': mobile_entries,
+                'pagination': {
+                    'page': page,
+                    'limit': limit,
+                    'total': total_count,
+                    'pages': (total_count + limit - 1) // limit
+                }
             }), 200
             
         except Exception as e:
-            from utils import logger
             logger.error(f"Error fetching mobile entries: {e}")
             return jsonify({
                 'success': False,
@@ -810,7 +873,6 @@ def admin_get_mobile_entries(current_admin):
             conn.close()
         
     except Exception as e:
-        from utils import logger
         logger.error(f"Error in admin_get_mobile_entries: {e}")
         return jsonify({
             'success': False,
@@ -828,22 +890,99 @@ def admin_get_vendor_entries(current_admin):
         cursor = conn.cursor(dictionary=True)
         
         try:
-            cursor.execute('''
-                SELECT ve.*, COALESCE(v.contact_name, mv.full_name) as vendor_name
+            # Get optional query parameters for filtering
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            product_type = request.args.get('product_type')
+            vendor_id = request.args.get('vendor_id')
+            date_from = request.args.get('date_from')
+            date_to = request.args.get('date_to')
+            
+            offset = (page - 1) * limit
+            
+            # Build the base query
+            query = '''
+                SELECT ve.*, 
+                       COALESCE(v.contact_name, mv.full_name) as vendor_name,
+                       COALESCE(v.email, mv.username) as vendor_contact
                 FROM vendor_entries ve
                 LEFT JOIN vendors v ON ve.vendor_id = v.id
                 LEFT JOIN mobile_vendors mv ON ve.vendor_id = mv.id
-                ORDER BY ve.created_at DESC
-            ''')
+                WHERE 1=1
+            '''
+            params = []
+            
+            # Add filters if provided
+            if product_type and product_type in ['existing_extinguisher', 'new_extinguisher', 'dcp_sachet']:
+                query += ' AND ve.product_type = %s'
+                params.append(product_type)
+                
+            if vendor_id:
+                query += ' AND ve.vendor_id = %s'
+                params.append(vendor_id)
+                
+            if date_from:
+                query += ' AND DATE(ve.created_at) >= %s'
+                params.append(date_from)
+                
+            if date_to:
+                query += ' AND DATE(ve.created_at) <= %s'
+                params.append(date_to)
+            
+            # Add ordering and pagination
+            query += ' ORDER BY ve.created_at DESC LIMIT %s OFFSET %s'
+            params.extend([limit, offset])
+            
+            cursor.execute(query, params)
             vendor_entries = cursor.fetchall()
+            
+            # Get total count for pagination
+            count_query = '''
+                SELECT COUNT(*) as total 
+                FROM vendor_entries ve
+                WHERE 1=1
+            '''
+            count_params = []
+            
+            if product_type and product_type in ['existing_extinguisher', 'new_extinguisher', 'dcp_sachet']:
+                count_query += ' AND ve.product_type = %s'
+                count_params.append(product_type)
+                
+            if vendor_id:
+                count_query += ' AND ve.vendor_id = %s'
+                count_params.append(vendor_id)
+                
+            if date_from:
+                count_query += ' AND DATE(ve.created_at) >= %s'
+                count_params.append(date_from)
+                
+            if date_to:
+                count_query += ' AND DATE(ve.created_at) <= %s'
+                count_params.append(date_to)
+            
+            cursor.execute(count_query, count_params)
+            total_count = cursor.fetchone()['total']
+            
+            # Parse JSON data if it's stored as string
+            for entry in vendor_entries:
+                if isinstance(entry['data'], str):
+                    try:
+                        entry['data'] = json.loads(entry['data'])
+                    except json.JSONDecodeError:
+                        entry['data'] = {}
             
             return jsonify({
                 'success': True,
-                'vendorEntries': vendor_entries
+                'vendorEntries': vendor_entries,
+                'pagination': {
+                    'page': page,
+                    'limit': limit,
+                    'total': total_count,
+                    'pages': (total_count + limit - 1) // limit
+                }
             }), 200
             
         except Exception as e:
-            from utils import logger
             logger.error(f"Error fetching vendor entries: {e}")
             return jsonify({
                 'success': False,
@@ -854,13 +993,12 @@ def admin_get_vendor_entries(current_admin):
             conn.close()
         
     except Exception as e:
-        from utils import logger
         logger.error(f"Error in admin_get_vendor_entries: {e}")
         return jsonify({
             'success': False,
             'message': f'Error fetching vendor entries: {str(e)}'
         }), 500
-
+    
 @admin_bp.route('/extinguisher-data', methods=['GET'])
 @admin_token_required
 def admin_extinguisher_data(current_admin):
