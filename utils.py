@@ -1,4 +1,3 @@
-# utils.py
 import mysql.connector
 import mysql.connector.pooling
 import os
@@ -6,9 +5,8 @@ import logging
 import bcrypt
 import jwt
 from functools import wraps
-from flask import jsonify, request
+from flask import jsonify, request, current_app
 from datetime import datetime, timedelta, timezone
-import flask
 logger = logging.getLogger(__name__)
 
 # Database configuration
@@ -38,10 +36,6 @@ def init_db_pool():
     except Exception as e:
         logger.error(f"Failed to create database connection pool: {e}")
         return False
-    
-def get_app():
-    """Get the Flask app instance without circular imports"""
-    return flask.current_app._get_current_object()
 
 def get_db_connection():
     """Get a database connection from the pool"""
@@ -71,8 +65,8 @@ def token_required(f):
             if token.startswith('Bearer '):
                 token = token[7:]
             
-            # Use get_app() instead of importing app directly
-            data = jwt.decode(token, get_app().config['SECRET_KEY'], algorithms=["HS256"])
+            # Use current_app instead of get_app()
+            data = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=["HS256"])
             
             # Check if it's a mobile vendor
             if data.get('is_mobile'):
@@ -113,7 +107,7 @@ def admin_token_required(f):
         if not token:
             return jsonify({'success': False, 'message': 'Admin token is missing'}), 401
         try:
-            data = jwt.decode(token, get_app().config['SECRET_KEY'], algorithms=["HS256"])
+            data = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=["HS256"])
             if data.get('role') != 'admin':
                 return jsonify({'success': False, 'message': 'Admin privileges required'}), 403
             current_admin = {'username': data.get('username')}
@@ -181,7 +175,6 @@ def get_mobile_vendor_by_id(vendor_id):
         conn.close()
     
     return vendor
-
 # Database initialization
 def init_db():
     """Initialize database tables"""

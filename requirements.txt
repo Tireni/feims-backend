@@ -3,3 +3,6 @@ Flask-CORS==4.0.0
 mysql-connector-python==8.1.0
 bcrypt==4.0.1
 PyJWT==2.8.0
+qrcode[pil]==7.4.2
+psutil==5.9.5
+Werkzeug==2.3.7

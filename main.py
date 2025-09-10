@@ -1,5 +1,5 @@
-# main.py
-from flask import Flask
+# main.py - UPDATED CORS configuration to allow all origins
+from flask import Flask, jsonify
 from flask_cors import CORS
 import os
 import logging
@@ -10,11 +10,13 @@ from config import SECRET_KEY
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Application start time for uptime calculations
-app_start_time = datetime.now(timezone.utc)
-
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+
+# Enable CORS for ALL origins
+CORS(app)
+
+# Alternative: More specific but still permissive CORS
+# CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Secret key for JWT
 app.config['SECRET_KEY'] = SECRET_KEY
@@ -41,6 +43,14 @@ app.register_blueprint(mobile_vendors_bp, url_prefix='/api/mobile')
 app.register_blueprint(officers_bp, url_prefix='/api/officers')
 app.register_blueprint(shared_bp, url_prefix='/api')
 
+# Add a simple health check endpoint
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }), 200
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=True)
