@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 vendors_bp = Blueprint('vendors', __name__)
 
 # Paystack Configuration
-PAYSTACK_SECRET_KEY =  'sk_live_eb402676dbf02c248af77eefce5ec41a6c7d13df'
-PAYSTACK_PUBLIC_KEY = 'pk_live_a0541b2eec649001cd19896b4d880d0214e87c99'
 PAYSTACK_BASE_URL = "https://api.paystack.co"
 
 UNIT_PRICE_NGN = 200.00  # ₦200 per sticker
