@@ -252,7 +252,7 @@ def generate_qr_after_payment(current_vendor):
             
             for _ in range(int(form_data['quantity'])):
                 qr_id = str(uuid.uuid4())
-                qr_url = f"https://nfdrc.ng/feims/scan/{qr_id}"
+                qr_url = f"https://nfdrc.ng/feims/scan.php/{qr_id}"
 
                 qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
                 qr.add_data(qr_url); qr.make(fit=True)
