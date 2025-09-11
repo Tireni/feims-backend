@@ -4,7 +4,6 @@ from flask import Blueprint, jsonify, request, current_app
 import uuid
 import bcrypt
 import jwt
-import requests
 import qrcode
 import io, base64, json
 from functools import wraps
