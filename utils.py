@@ -176,6 +176,7 @@ def get_mobile_vendor_by_id(vendor_id):
     
     return vendor
 # Database initialization
+# Database initialization
 def init_db():
     """Initialize database tables"""
     conn = get_db_connection()
@@ -233,7 +234,7 @@ def init_db():
                 vendor_id VARCHAR(255) NOT NULL,
                 product_type ENUM('existing_extinguisher', 'new_extinguisher', 'dcp_sachet') NOT NULL,
                 size VARCHAR(10) NOT NULL,
-                type VARCHAR(5) NOT NULL,
+                type VARCHAR(20) NOT NULL,
                 qr_image TEXT NOT NULL,
                 status ENUM('active', 'inactive', 'pending') DEFAULT 'inactive',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -260,24 +261,25 @@ def init_db():
             )
         ''')
 
-        # Create table for new fire extinguishers
+        # Create table for new fire extinguishers (updated structure)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS new_extinguishers (
                 id VARCHAR(255) PRIMARY KEY,
                 qr_code_id VARCHAR(255) NOT NULL,
                 manufacturer_name VARCHAR(255) NOT NULL,
-                son_number VARCHAR(100) NOT NULL,
-                ncs_receipt_number VARCHAR(100) NOT NULL,
-                ffs_fat_id VARCHAR(100) NOT NULL,
+                son_number VARCHAR(255) NOT NULL,
+                ncs_receipt_number VARCHAR(255) NOT NULL,
+                ffs_fat_id VARCHAR(255) NOT NULL,
                 distributor_name VARCHAR(255) NOT NULL,
                 manufacturing_date DATE NOT NULL,
                 expiry_date DATE NOT NULL,
-                engraved_id VARCHAR(100) NOT NULL,
+                engraved_id VARCHAR(255) NOT NULL,
                 phone_number VARCHAR(20) NOT NULL,
                 state VARCHAR(100) NOT NULL,
                 local_government VARCHAR(100) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (qr_code_id) REFERENCES qr_codes(id) ON DELETE CASCADE
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (qr_code_id) REFERENCES qr_codes(id)
             )
         ''')
 
@@ -496,6 +498,38 @@ def init_db():
                 name VARCHAR(255) NOT NULL,
                 phone VARCHAR(20) NOT NULL,
                 service_number VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+
+        # Track vendor QR purchase requests (payment-intent) with status field
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS qr_purchase_requests (
+                id VARCHAR(255) PRIMARY KEY,
+                vendor_id VARCHAR(255) NOT NULL,
+                product_type ENUM('new_extinguisher') NOT NULL,
+                size VARCHAR(10) NOT NULL,
+                type VARCHAR(20) NOT NULL,
+                quantity INT NOT NULL,
+                unit_amount DECIMAL(10,2) NOT NULL,
+                total_amount DECIMAL(10,2) NOT NULL,
+                form_payload JSON NOT NULL,
+                trace_id VARCHAR(64) UNIQUE NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Log CoralPay transactions
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS coralpay_transactions (
+                id VARCHAR(255) PRIMARY KEY,
+                vendor_id VARCHAR(255) NOT NULL,
+                trace_id VARCHAR(64) NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                response_code VARCHAR(10) NOT NULL,
+                raw_payload JSON NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
